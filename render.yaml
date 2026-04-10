@@ -53,5 +53,4 @@ services:
   - type: web
     name: shopcore-frontend
     env: static
-    staticPublishPath: ./frontend
-    buildCommand: echo "Static — no build needed"
+    staticPublishPath: frontend
