@@ -22,7 +22,12 @@ CORS(app)
 # ── Configuration via Environment Variable ────────────────────────────────────
 # Reading config from the environment is a 12-Factor App principle.
 # It decouples the service from any specific deployment topology.
-PRODUCT_SERVICE_URL = os.environ.get("PRODUCT_SERVICE_URL", "http://localhost:5001")
+# Render's fromService injects just the hostname (no scheme).
+# Prepend https:// automatically so the URL is always valid.
+_product_url = os.environ.get("PRODUCT_SERVICE_URL", "http://localhost:5001")
+if _product_url and not _product_url.startswith(("http://", "https://")):
+    _product_url = f"https://{_product_url}"
+PRODUCT_SERVICE_URL = _product_url
 
 # ── In-Memory Order Store ─────────────────────────────────────────────────────
 _orders = []
@@ -89,4 +94,5 @@ def place_order():
 
 # ── Entry Point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5002, debug=False)
+    port = int(os.environ.get("PORT", 5002))
+    app.run(host="0.0.0.0", port=port, debug=False)

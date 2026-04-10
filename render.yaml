@@ -1,0 +1,57 @@
+# ── render.yaml ───────────────────────────────────────────────────────────────
+# Render Blueprint — deploys all 4 services from this monorepo in one click.
+#
+# How to deploy:
+#   1. Push this repo to GitHub (already done).
+#   2. Go to https://dashboard.render.com → New → Blueprint
+#   3. Connect your GitHub repo — Render auto-reads this file.
+#   4. Click "Apply" — all services are provisioned automatically.
+#
+# After deploy:
+#   - Copy the 3 backend service URLs from the Render dashboard.
+#   - Open the frontend URL, go to ⚙ Config in the sidebar, paste the URLs.
+# ─────────────────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── Product Service ─────────────────────────────────────────────────────────
+  - type: web
+    name: product-service
+    env: python
+    plan: free
+    buildCommand: pip install -r product_service/requirements.txt
+    startCommand: cd product_service && gunicorn app:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
+
+  # ── Order Service ───────────────────────────────────────────────────────────
+  # Render automatically injects the Product Service hostname via fromService.
+  # order_service/app.py prepends https:// when no scheme is present.
+  - type: web
+    name: order-service
+    env: python
+    plan: free
+    buildCommand: pip install -r order_service/requirements.txt
+    startCommand: cd order_service && gunicorn app:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PRODUCT_SERVICE_URL
+        fromService:
+          type: web
+          name: product-service
+          property: host
+
+  # ── User Service ────────────────────────────────────────────────────────────
+  - type: web
+    name: user-service
+    env: python
+    plan: free
+    buildCommand: pip install -r user_service/requirements.txt
+    startCommand: cd user_service && gunicorn app:app --bind 0.0.0.0:$PORT
+    healthCheckPath: /health
+
+  # ── Frontend (Static Site) ──────────────────────────────────────────────────
+  - type: web
+    name: shopcore-frontend
+    env: static
+    staticPublishPath: ./frontend
+    buildCommand: echo "Static — no build needed"

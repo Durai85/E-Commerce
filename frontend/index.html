@@ -339,6 +339,9 @@
     <button class="nav-item" onclick="showSection('health')">
       <i class="bi bi-heart-pulse-fill"></i><span>Health</span>
     </button>
+    <button class="nav-item" onclick="showSection('config')">
+      <i class="bi bi-gear-fill"></i><span>Config</span>
+    </button>
   </nav>
 
   <div class="sidebar-status">
@@ -673,6 +676,64 @@
       </div>
     </div><!-- /health -->
 
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: Config
+    ════════════════════════════════════════════════════ -->
+    <div class="section" id="section-config">
+      <div style="max-width:580px">
+        <div class="panel mb-3">
+          <div class="panel-header">
+            <div>
+              <h2><i class="bi bi-gear-fill" style="color:var(--muted)"></i>Service URLs</h2>
+              <div class="meta">Set backend endpoints for your deployment environment</div>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="alert alert-info" style="margin-bottom:1.25rem">
+              <i class="bi bi-info-circle-fill"></i>
+              <div>
+                Defaults are <code>localhost</code> for local dev.
+                After deploying to <strong>Render</strong>, paste your three service URLs here — they are saved to <code>localStorage</code> and survive page refreshes.
+              </div>
+            </div>
+            <div class="form-field">
+              <label><i class="bi bi-box-seam me-1"></i>Product Service URL</label>
+              <input type="url" id="cfg-product" placeholder="https://product-service-xxxx.onrender.com" />
+            </div>
+            <div class="form-field">
+              <label><i class="bi bi-bag-check me-1"></i>Order Service URL</label>
+              <input type="url" id="cfg-order" placeholder="https://order-service-xxxx.onrender.com" />
+            </div>
+            <div class="form-field">
+              <label><i class="bi bi-people me-1"></i>User Service URL</label>
+              <input type="url" id="cfg-user" placeholder="https://user-service-xxxx.onrender.com" />
+            </div>
+            <div style="display:flex;gap:0.75rem;flex-wrap:wrap">
+              <button class="btn-primary" onclick="saveConfig()">
+                <i class="bi bi-floppy"></i>Save &amp; Apply
+              </button>
+              <button class="btn-outline" onclick="resetConfig()">
+                <i class="bi bi-arrow-counterclockwise"></i>Reset to localhost
+              </button>
+            </div>
+            <div id="cfg-result" style="margin-top:0.75rem"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="panel-header">
+            <h2><i class="bi bi-circle-fill" style="color:var(--success);font-size:0.6rem"></i>Active Endpoints</h2>
+          </div>
+          <div class="panel-body" style="display:flex;flex-direction:column;gap:0.5rem">
+            <div style="font-size:0.82rem"><span style="color:var(--muted);width:80px;display:inline-block">Product</span><code id="active-product"></code></div>
+            <div style="font-size:0.82rem"><span style="color:var(--muted);width:80px;display:inline-block">Order</span><code id="active-order"></code></div>
+            <div style="font-size:0.82rem"><span style="color:var(--muted);width:80px;display:inline-block">User</span><code id="active-user"></code></div>
+          </div>
+        </div>
+      </div>
+    </div><!-- /config -->
+
   </div><!-- /content -->
 </div><!-- /main -->
 
@@ -680,18 +741,19 @@
 <div id="toast-container"></div>
 
 <script>
-// ── Service URLs ──────────────────────────────────────────────────────────────
-const PRODUCT_URL = 'http://localhost:5011';
-const ORDER_URL   = 'http://localhost:5012';
-const USER_URL    = 'http://localhost:5013';
+// ── Service URLs (localStorage-backed, editable via ⚙ Config) ────────────────
+let PRODUCT_URL = localStorage.getItem('cfg_product_url') || 'http://localhost:5011';
+let ORDER_URL   = localStorage.getItem('cfg_order_url')   || 'http://localhost:5012';
+let USER_URL    = localStorage.getItem('cfg_user_url')    || 'http://localhost:5013';
 
 let orderCount = 0;
 const SECTION_META = {
-  dashboard: { title: 'Dashboard',  sub: 'Overview of all microservices' },
-  products:  { title: 'Products',   sub: 'Catalogue from product-service' },
-  users:     { title: 'Users',      sub: 'User management via user-service' },
-  orders:    { title: 'Orders',     sub: 'Place orders via order-service' },
-  health:    { title: 'Health',     sub: 'Kubernetes probe endpoints status' },
+  dashboard: { title: 'Dashboard',     sub: 'Overview of all microservices' },
+  products:  { title: 'Products',      sub: 'Catalogue from product-service' },
+  users:     { title: 'Users',         sub: 'User management via user-service' },
+  orders:    { title: 'Orders',        sub: 'Place orders via order-service' },
+  health:    { title: 'Health',        sub: 'Kubernetes probe endpoints status' },
+  config:    { title: 'Configuration', sub: 'Service endpoint URLs' },
 };
 
 // ── Navigation ────────────────────────────────────────────────────────────────
@@ -713,6 +775,7 @@ function showSection(name) {
   if (name === 'products') loadProducts();
   if (name === 'users')    loadUsers();
   if (name === 'health')   checkAllHealth();
+  if (name === 'config')   loadConfigInputs();
 }
 
 // ── Toast Notifications ───────────────────────────────────────────────────────
@@ -973,6 +1036,53 @@ async function placeOrder() {
   }
 }
 
+// ── Config Management ─────────────────────────────────────────────────────────
+function updateActiveEndpoints() {
+  document.getElementById('active-product').textContent = PRODUCT_URL;
+  document.getElementById('active-order').textContent   = ORDER_URL;
+  document.getElementById('active-user').textContent    = USER_URL;
+}
+
+function loadConfigInputs() {
+  document.getElementById('cfg-product').value = PRODUCT_URL;
+  document.getElementById('cfg-order').value   = ORDER_URL;
+  document.getElementById('cfg-user').value    = USER_URL;
+  updateActiveEndpoints();
+}
+
+function saveConfig() {
+  const p = (document.getElementById('cfg-product').value || '').trim().replace(/\/$/, '');
+  const o = (document.getElementById('cfg-order').value   || '').trim().replace(/\/$/, '');
+  const u = (document.getElementById('cfg-user').value    || '').trim().replace(/\/$/, '');
+  const result = document.getElementById('cfg-result');
+
+  if (!p || !o || !u) {
+    result.innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-circle"></i>All three URLs are required.</div>';
+    return;
+  }
+  localStorage.setItem('cfg_product_url', p);
+  localStorage.setItem('cfg_order_url',   o);
+  localStorage.setItem('cfg_user_url',    u);
+  PRODUCT_URL = p; ORDER_URL = o; USER_URL = u;
+  updateActiveEndpoints();
+  result.innerHTML = '<div class="alert alert-success"><i class="bi bi-check-circle-fill"></i>URLs saved — services will use the new endpoints.</div>';
+  toast('success', 'Config saved', 'Service URLs updated');
+  checkAllHealth();
+}
+
+function resetConfig() {
+  localStorage.removeItem('cfg_product_url');
+  localStorage.removeItem('cfg_order_url');
+  localStorage.removeItem('cfg_user_url');
+  PRODUCT_URL = 'http://localhost:5011';
+  ORDER_URL   = 'http://localhost:5012';
+  USER_URL    = 'http://localhost:5013';
+  loadConfigInputs();
+  document.getElementById('cfg-result').innerHTML =
+    '<div class="alert alert-info"><i class="bi bi-info-circle"></i>Reset to localhost defaults.</div>';
+  toast('info', 'Config reset', 'Using localhost defaults');
+}
+
 // ── Global Refresh ────────────────────────────────────────────────────────────
 function refreshAll() {
   checkAllHealth();
@@ -982,6 +1092,7 @@ function refreshAll() {
 }
 
 // ── Init ──────────────────────────────────────────────────────────────────────
+updateActiveEndpoints();
 checkAllHealth();
 loadProducts();
 loadUsers();

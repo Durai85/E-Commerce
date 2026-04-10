@@ -9,6 +9,7 @@
 # Port: 5001  (set in the Dockerfile CMD and Kubernetes manifest)
 # ─────────────────────────────────────────────────────────────────────────────
 
+import os
 from flask import Flask, jsonify
 from flask_cors import CORS
 
@@ -54,4 +55,5 @@ def get_product(product_id):
 # host='0.0.0.0' is required inside a Docker container so the port is reachable
 # from outside the container network namespace.
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=False)
+    port = int(os.environ.get("PORT", 5001))
+    app.run(host="0.0.0.0", port=port, debug=False)
