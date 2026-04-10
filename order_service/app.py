@@ -14,8 +14,10 @@
 import os
 import requests
 from flask import Flask, jsonify, request
+from flask_cors import CORS
 
 app = Flask(__name__)
+CORS(app)
 
 # ── Configuration via Environment Variable ────────────────────────────────────
 # Reading config from the environment is a 12-Factor App principle.
