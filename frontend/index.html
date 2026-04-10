@@ -3,287 +3,988 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>E-Commerce Inventory & Order System</title>
+  <title>E-Commerce Platform · Microservices Demo</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"/>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.css" rel="stylesheet"/>
   <style>
-    body { background: #f0f2f5; }
-    .navbar { background: linear-gradient(90deg, #1a1a2e, #16213e); }
-    .service-badge { font-size: 0.7rem; padding: 2px 8px; border-radius: 20px; }
-    .card { border: none; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
-    .card-header { border-radius: 12px 12px 0 0 !important; }
-    .stock-badge { font-size: 0.75rem; }
-    #order-result { display: none; }
-    .pulse { animation: pulse 1.5s infinite; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
-    .hero { background: linear-gradient(135deg, #1a1a2e, #0f3460); color: white; padding: 3rem 0; margin-bottom: 2rem; }
-    .stat-card { text-align: center; padding: 1.2rem; border-radius: 10px; color: white; }
+    :root {
+      --sidebar-width: 220px;
+      --primary:   #4f46e5;
+      --primary-dark: #3730a3;
+      --success:   #10b981;
+      --warning:   #f59e0b;
+      --danger:    #ef4444;
+      --surface:   #ffffff;
+      --bg:        #f1f5f9;
+      --text:      #0f172a;
+      --muted:     #64748b;
+      --border:    #e2e8f0;
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      display: flex;
+      min-height: 100vh;
+    }
+
+    /* ── Sidebar ─────────────────────────────────────────────────────────── */
+    .sidebar {
+      width: var(--sidebar-width);
+      background: #1e1b4b;
+      display: flex;
+      flex-direction: column;
+      position: fixed;
+      top: 0; left: 0; bottom: 0;
+      z-index: 100;
+      overflow-y: auto;
+    }
+
+    .sidebar-brand {
+      padding: 1.25rem 1.25rem 1rem;
+      border-bottom: 1px solid rgba(255,255,255,0.08);
+    }
+    .sidebar-brand .brand-icon {
+      width: 36px; height: 36px;
+      background: var(--primary);
+      border-radius: 8px;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 1rem; color: white; margin-right: 0.6rem;
+    }
+    .sidebar-brand .brand-name {
+      font-weight: 700; font-size: 0.95rem; color: white;
+    }
+    .sidebar-brand .brand-sub {
+      font-size: 0.7rem; color: rgba(255,255,255,0.4);
+    }
+
+    .sidebar-nav { padding: 0.75rem 0; flex: 1; }
+    .sidebar-nav .nav-label {
+      padding: 0.6rem 1.25rem 0.3rem;
+      font-size: 0.65rem; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: rgba(255,255,255,0.3);
+    }
+    .sidebar-nav .nav-item {
+      padding: 0.55rem 1.25rem;
+      display: flex; align-items: center; gap: 0.65rem;
+      cursor: pointer;
+      color: rgba(255,255,255,0.55);
+      font-size: 0.875rem; font-weight: 500;
+      border-radius: 0; transition: all 0.15s;
+      text-decoration: none; border: none; background: none; width: 100%;
+      text-align: left;
+    }
+    .sidebar-nav .nav-item:hover { color: white; background: rgba(255,255,255,0.06); }
+    .sidebar-nav .nav-item.active {
+      color: white; background: var(--primary);
+      border-radius: 0 8px 8px 0; margin-right: 0.75rem;
+    }
+    .sidebar-nav .nav-item i { font-size: 1rem; width: 1.2rem; text-align: center; }
+
+    .sidebar-status {
+      padding: 1rem 1.25rem;
+      border-top: 1px solid rgba(255,255,255,0.08);
+    }
+    .status-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      display: inline-block; margin-right: 0.4rem;
+    }
+    .status-dot.healthy { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    .status-dot.unhealthy { background: var(--danger); }
+    .status-dot.checking { background: var(--warning); animation: blink 1.2s infinite; }
+    .sidebar-svc {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 0.3rem 0; font-size: 0.72rem; color: rgba(255,255,255,0.5);
+    }
+    .sidebar-svc .svc-name { color: rgba(255,255,255,0.75); font-weight: 500; }
+
+    /* ── Main Layout ─────────────────────────────────────────────────────── */
+    .main {
+      margin-left: var(--sidebar-width);
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ── Topbar ──────────────────────────────────────────────────────────── */
+    .topbar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 0.75rem 2rem;
+      display: flex; align-items: center; justify-content: space-between;
+      position: sticky; top: 0; z-index: 50;
+    }
+    .topbar h1 { font-size: 1.1rem; font-weight: 700; margin: 0; }
+    .topbar .breadcrumb { font-size: 0.8rem; color: var(--muted); margin: 0; }
+
+    /* ── Content ─────────────────────────────────────────────────────────── */
+    .content { padding: 1.75rem 2rem; flex: 1; }
+
+    .section { display: none; }
+    .section.active { display: block; }
+
+    /* ── Stat Cards ──────────────────────────────────────────────────────── */
+    .stat-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+    .stat-card {
+      background: var(--surface); border-radius: 12px;
+      padding: 1.25rem 1.5rem;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      border: 1px solid var(--border);
+    }
+    .stat-card .stat-icon {
+      width: 42px; height: 42px; border-radius: 10px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.2rem; margin-bottom: 0.75rem;
+    }
+    .stat-card .stat-value { font-size: 1.75rem; font-weight: 700; line-height: 1; }
+    .stat-card .stat-label { font-size: 0.78rem; color: var(--muted); margin-top: 0.25rem; }
+
+    /* ── Card ────────────────────────────────────────────────────────────── */
+    .panel {
+      background: var(--surface); border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+      overflow: hidden;
+    }
+    .panel-header {
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .panel-header h2 {
+      font-size: 0.95rem; font-weight: 600; margin: 0;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+    .panel-header .meta { font-size: 0.72rem; color: var(--muted); margin-top: 0.1rem; }
+    .panel-body { padding: 1.5rem; }
+
+    /* ── Table ───────────────────────────────────────────────────────────── */
+    .data-table { width: 100%; border-collapse: collapse; }
+    .data-table th {
+      padding: 0.65rem 1rem; font-size: 0.72rem; font-weight: 600;
+      letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted);
+      border-bottom: 1px solid var(--border); text-align: left; background: #f8fafc;
+    }
+    .data-table td {
+      padding: 0.85rem 1rem; font-size: 0.875rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+    .data-table tr:last-child td { border-bottom: none; }
+    .data-table tbody tr:hover { background: #f8fafc; cursor: pointer; }
+
+    /* ── Badges ──────────────────────────────────────────────────────────── */
+    .badge-pill {
+      display: inline-flex; align-items: center;
+      padding: 0.2rem 0.65rem; border-radius: 20px;
+      font-size: 0.72rem; font-weight: 600;
+    }
+    .badge-green  { background: #dcfce7; color: #15803d; }
+    .badge-yellow { background: #fef9c3; color: #a16207; }
+    .badge-red    { background: #fee2e2; color: #b91c1c; }
+    .badge-blue   { background: #dbeafe; color: #1d4ed8; }
+    .badge-purple { background: #ede9fe; color: #6d28d9; }
+    .badge-gray   { background: #f1f5f9; color: #475569; }
+
+    /* ── Avatar ──────────────────────────────────────────────────────────── */
+    .avatar {
+      width: 32px; height: 32px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 0.75rem; font-weight: 700; color: white; flex-shrink: 0;
+    }
+
+    /* ── Form Controls ───────────────────────────────────────────────────── */
+    .form-field { margin-bottom: 1rem; }
+    .form-field label { display: block; font-size: 0.82rem; font-weight: 600; margin-bottom: 0.4rem; }
+    .form-field input, .form-field select {
+      width: 100%; padding: 0.55rem 0.85rem;
+      border: 1.5px solid var(--border); border-radius: 8px;
+      font-size: 0.875rem; outline: none; transition: border 0.15s;
+      background: white;
+    }
+    .form-field input:focus, .form-field select:focus { border-color: var(--primary); }
+
+    .btn-primary {
+      background: var(--primary); color: white; border: none;
+      padding: 0.6rem 1.25rem; border-radius: 8px; font-size: 0.875rem;
+      font-weight: 600; cursor: pointer; transition: background 0.15s;
+      display: inline-flex; align-items: center; gap: 0.4rem;
+    }
+    .btn-primary:hover { background: var(--primary-dark); }
+    .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+    .btn-outline {
+      background: none; border: 1.5px solid var(--border); color: var(--text);
+      padding: 0.4rem 0.85rem; border-radius: 8px; font-size: 0.8rem;
+      font-weight: 500; cursor: pointer; transition: all 0.15s;
+    }
+    .btn-outline:hover { border-color: var(--primary); color: var(--primary); }
+
+    /* ── Alerts ──────────────────────────────────────────────────────────── */
+    .alert {
+      padding: 0.75rem 1rem; border-radius: 8px; font-size: 0.85rem;
+      display: flex; align-items: flex-start; gap: 0.6rem;
+    }
+    .alert-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .alert-danger  { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+    .alert-warning { background: #fef9c3; color: #854d0e; border: 1px solid #fde047; }
+    .alert-info    { background: #dbeafe; color: #1e40af; border: 1px solid #bfdbfe; }
+
+    /* ── Health Cards ────────────────────────────────────────────────────── */
+    .health-card {
+      background: var(--surface); border-radius: 12px;
+      border: 1px solid var(--border); padding: 1.25rem 1.5rem;
+      display: flex; align-items: center; gap: 1rem;
+    }
+    .health-icon {
+      width: 48px; height: 48px; border-radius: 12px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.4rem; flex-shrink: 0;
+    }
+    .health-details { flex: 1; }
+    .health-name { font-weight: 600; font-size: 0.9rem; }
+    .health-url  { font-size: 0.72rem; color: var(--muted); font-family: monospace; }
+    .health-response { font-size: 0.78rem; color: var(--muted); margin-top: 0.25rem; font-family: monospace; }
+
+    /* ── Toast ───────────────────────────────────────────────────────────── */
+    #toast-container {
+      position: fixed; top: 1rem; right: 1rem; z-index: 9999;
+      display: flex; flex-direction: column; gap: 0.5rem; width: 320px;
+    }
+    .toast-item {
+      background: white; border-radius: 10px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.12);
+      padding: 0.85rem 1rem; font-size: 0.85rem;
+      display: flex; align-items: flex-start; gap: 0.6rem;
+      border-left: 4px solid;
+      animation: slideIn 0.2s ease;
+    }
+    .toast-item.success { border-color: var(--success); }
+    .toast-item.error   { border-color: var(--danger); }
+    .toast-item.info    { border-color: var(--primary); }
+    .toast-msg { flex: 1; }
+    .toast-title { font-weight: 600; margin-bottom: 0.1rem; }
+    .toast-body  { color: var(--muted); font-size: 0.78rem; }
+
+    /* ── Order History List ──────────────────────────────────────────────── */
+    .order-item {
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .order-item:last-child { border-bottom: none; }
+
+    /* ── Loading spinner ─────────────────────────────────────────────────── */
+    .spinner {
+      display: inline-block; width: 20px; height: 20px;
+      border: 2.5px solid rgba(79,70,229,0.2); border-top-color: var(--primary);
+      border-radius: 50%; animation: spin 0.7s linear infinite;
+    }
+    .loading-state { padding: 2.5rem; text-align: center; color: var(--muted); }
+
+    /* ── Animations ──────────────────────────────────────────────────────── */
+    @keyframes spin    { to { transform: rotate(360deg); } }
+    @keyframes blink   { 0%,100%{opacity:1} 50%{opacity:.3} }
+    @keyframes slideIn { from{transform:translateX(20px);opacity:0} to{transform:translateX(0);opacity:1} }
+    @keyframes fadeOut { to{opacity:0;transform:translateY(-8px)} }
+
+    /* ── Responsive ──────────────────────────────────────────────────────── */
+    @media (max-width: 768px) {
+      .sidebar { width: 60px; }
+      .sidebar-brand .brand-name,
+      .sidebar-brand .brand-sub,
+      .nav-item span,
+      .nav-label,
+      .sidebar-status { display: none; }
+      .main { margin-left: 60px; }
+      .stat-grid { grid-template-columns: repeat(2, 1fr); }
+      .content { padding: 1rem; }
+    }
   </style>
 </head>
 <body>
 
-<!-- Navbar -->
-<nav class="navbar navbar-dark px-4 py-3">
-  <span class="navbar-brand fw-bold fs-5">
-    <i class="bi bi-shop me-2"></i>E-Commerce System
-  </span>
-  <div class="d-flex gap-2">
-    <span id="badge-product" class="service-badge bg-secondary text-white">
-      <i class="bi bi-circle-fill me-1" style="font-size:0.5rem"></i>product-service
-    </span>
-    <span id="badge-order" class="service-badge bg-secondary text-white">
-      <i class="bi bi-circle-fill me-1" style="font-size:0.5rem"></i>order-service
-    </span>
-  </div>
-</nav>
-
-<!-- Hero -->
-<div class="hero text-center">
-  <h1 class="fw-bold mb-1">Inventory & Order Management</h1>
-  <p class="text-white-50 mb-3">Microservices Demo — Flask · Docker · Kubernetes · GitHub Actions</p>
-  <div class="d-flex justify-content-center gap-3 flex-wrap">
-    <div class="stat-card bg-white bg-opacity-10">
-      <div class="fs-2 fw-bold" id="stat-products">—</div>
-      <div class="small text-white-50">Products</div>
-    </div>
-    <div class="stat-card bg-white bg-opacity-10">
-      <div class="fs-2 fw-bold" id="stat-orders">0</div>
-      <div class="small text-white-50">Orders Placed</div>
-    </div>
-    <div class="stat-card bg-white bg-opacity-10">
-      <div class="fs-2 fw-bold">2</div>
-      <div class="small text-white-50">Microservices</div>
+<!-- ── Sidebar ──────────────────────────────────────────────────────────────── -->
+<aside class="sidebar">
+  <div class="sidebar-brand">
+    <div class="d-flex align-items-center">
+      <span class="brand-icon"><i class="bi bi-shop"></i></span>
+      <div>
+        <div class="brand-name">ShopCore</div>
+        <div class="brand-sub">Microservices Platform</div>
+      </div>
     </div>
   </div>
-</div>
 
-<div class="container pb-5">
-  <div class="row g-4">
+  <nav class="sidebar-nav">
+    <div class="nav-label">Navigation</div>
+    <button class="nav-item active" onclick="showSection('dashboard')">
+      <i class="bi bi-grid-1x2-fill"></i><span>Dashboard</span>
+    </button>
+    <button class="nav-item" onclick="showSection('products')">
+      <i class="bi bi-box-seam-fill"></i><span>Products</span>
+    </button>
+    <button class="nav-item" onclick="showSection('users')">
+      <i class="bi bi-people-fill"></i><span>Users</span>
+    </button>
+    <button class="nav-item" onclick="showSection('orders')">
+      <i class="bi bi-bag-check-fill"></i><span>Orders</span>
+    </button>
+    <div class="nav-label" style="margin-top:0.5rem">System</div>
+    <button class="nav-item" onclick="showSection('health')">
+      <i class="bi bi-heart-pulse-fill"></i><span>Health</span>
+    </button>
+  </nav>
 
-    <!-- Product Catalogue -->
-    <div class="col-lg-7">
-      <div class="card h-100">
-        <div class="card-header bg-primary text-white py-3">
-          <h5 class="mb-0"><i class="bi bi-box-seam me-2"></i>Product Catalogue
-            <span class="badge bg-white text-primary ms-2 float-end" id="product-count">...</span>
-          </h5>
-          <small class="opacity-75">GET /products — product-service:5001</small>
-        </div>
-        <div class="card-body p-0">
-          <div id="product-loading" class="text-center py-5 text-muted">
-            <div class="spinner-border text-primary mb-2"></div>
-            <div>Fetching from product-service...</div>
+  <div class="sidebar-status">
+    <div class="nav-label" style="padding:0 0 0.4rem; font-size:0.6rem">Services</div>
+    <div class="sidebar-svc">
+      <span class="svc-name">product</span>
+      <span><span class="status-dot checking" id="dot-product"></span></span>
+    </div>
+    <div class="sidebar-svc">
+      <span class="svc-name">order</span>
+      <span><span class="status-dot checking" id="dot-order"></span></span>
+    </div>
+    <div class="sidebar-svc">
+      <span class="svc-name">user</span>
+      <span><span class="status-dot checking" id="dot-user"></span></span>
+    </div>
+  </div>
+</aside>
+
+<!-- ── Main ─────────────────────────────────────────────────────────────────── -->
+<div class="main">
+
+  <!-- Topbar -->
+  <div class="topbar">
+    <div>
+      <h1 id="page-title">Dashboard</h1>
+      <div class="breadcrumb" id="page-subtitle">Overview of all microservices</div>
+    </div>
+    <div class="d-flex align-items-center gap-2">
+      <button class="btn-outline" onclick="refreshAll()">
+        <i class="bi bi-arrow-clockwise me-1"></i>Refresh
+      </button>
+      <span style="font-size:0.75rem;color:var(--muted);background:#f1f5f9;padding:0.3rem 0.7rem;border-radius:6px">
+        Flask · Docker · K8s
+      </span>
+    </div>
+  </div>
+
+  <div class="content">
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: Dashboard
+    ════════════════════════════════════════════════════ -->
+    <div class="section active" id="section-dashboard">
+
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#ede9fe;color:#6d28d9">
+            <i class="bi bi-box-seam-fill"></i>
           </div>
-          <table class="table table-hover mb-0" id="product-table" style="display:none">
-            <thead class="table-light">
+          <div class="stat-value" id="dash-products">—</div>
+          <div class="stat-label">Products in catalogue</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#dbeafe;color:#1d4ed8">
+            <i class="bi bi-people-fill"></i>
+          </div>
+          <div class="stat-value" id="dash-users">—</div>
+          <div class="stat-label">Registered users</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#dcfce7;color:#15803d">
+            <i class="bi bi-bag-check-fill"></i>
+          </div>
+          <div class="stat-value" id="dash-orders">0</div>
+          <div class="stat-label">Orders this session</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon" style="background:#fef9c3;color:#a16207">
+            <i class="bi bi-server"></i>
+          </div>
+          <div class="stat-value" id="dash-services">3</div>
+          <div class="stat-label">Microservices</div>
+        </div>
+      </div>
+
+      <!-- Architecture diagram panel -->
+      <div class="panel mb-3">
+        <div class="panel-header">
+          <div>
+            <h2><i class="bi bi-diagram-3-fill" style="color:var(--primary)"></i>Service Architecture</h2>
+            <div class="meta">How the microservices communicate</div>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:1rem;text-align:center">
+            <div style="padding:1rem;background:#f8fafc;border-radius:10px;border:1px solid var(--border)">
+              <div style="font-size:1.75rem;margin-bottom:0.5rem">📦</div>
+              <div style="font-weight:600;font-size:0.9rem">Product Service</div>
+              <code style="font-size:0.7rem;color:var(--muted)">:5001</code>
+              <div style="margin-top:0.5rem">
+                <span class="badge-pill badge-purple">GET /products</span>
+              </div>
+            </div>
+            <div style="padding:1rem;background:#f8fafc;border-radius:10px;border:1px solid var(--border)">
+              <div style="font-size:1.75rem;margin-bottom:0.5rem">🛒</div>
+              <div style="font-weight:600;font-size:0.9rem">Order Service</div>
+              <code style="font-size:0.7rem;color:var(--muted)">:5002</code>
+              <div style="margin-top:0.5rem">
+                <span class="badge-pill badge-blue">POST /order</span>
+              </div>
+            </div>
+            <div style="padding:1rem;background:#f8fafc;border-radius:10px;border:1px solid var(--border)">
+              <div style="font-size:1.75rem;margin-bottom:0.5rem">👤</div>
+              <div style="font-weight:600;font-size:0.9rem">User Service</div>
+              <code style="font-size:0.7rem;color:var(--muted)">:5003</code>
+              <div style="margin-top:0.5rem">
+                <span class="badge-pill badge-green">POST /users</span>
+              </div>
+            </div>
+          </div>
+          <div style="text-align:center;margin-top:1rem;font-size:0.78rem;color:var(--muted)">
+            <i class="bi bi-arrow-left-right me-1"></i>
+            Order Service calls Product Service via HTTP to validate product IDs before confirming orders
+          </div>
+        </div>
+      </div>
+
+      <!-- Stack panel -->
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2><i class="bi bi-stack" style="color:var(--primary)"></i>DevOps Stack</h2>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div style="display:flex;flex-wrap:wrap;gap:0.5rem">
+            <span class="badge-pill badge-blue"><i class="bi bi-code-slash me-1"></i>Python / Flask</span>
+            <span class="badge-pill badge-blue"><i class="bi bi-box me-1"></i>Docker</span>
+            <span class="badge-pill badge-purple"><i class="bi bi-gear me-1"></i>Kubernetes</span>
+            <span class="badge-pill badge-gray"><i class="bi bi-github me-1"></i>GitHub Actions CI/CD</span>
+            <span class="badge-pill badge-yellow"><i class="bi bi-cloud me-1"></i>Terraform (AWS EC2)</span>
+            <span class="badge-pill badge-green"><i class="bi bi-check-circle me-1"></i>pytest</span>
+            <span class="badge-pill badge-gray"><i class="bi bi-hub me-1"></i>DockerHub</span>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /dashboard -->
+
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: Products
+    ════════════════════════════════════════════════════ -->
+    <div class="section" id="section-products">
+      <div class="panel">
+        <div class="panel-header">
+          <div>
+            <h2><i class="bi bi-box-seam-fill" style="color:#6d28d9"></i>Product Catalogue</h2>
+            <div class="meta">GET /products &nbsp;·&nbsp; product-service:5001</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:0.75rem">
+            <span class="badge-pill badge-gray" id="product-count-badge">— items</span>
+            <button class="btn-outline" onclick="loadProducts()">
+              <i class="bi bi-arrow-clockwise me-1"></i>Reload
+            </button>
+          </div>
+        </div>
+        <div id="products-loading" class="loading-state">
+          <div class="spinner" style="width:28px;height:28px;margin:0 auto 0.75rem"></div>
+          <div>Fetching from product-service…</div>
+        </div>
+        <table class="data-table" id="products-table" style="display:none">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Product Name</th>
+              <th>Price</th>
+              <th>Stock</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="products-body"></tbody>
+        </table>
+      </div>
+    </div><!-- /products -->
+
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: Users
+    ════════════════════════════════════════════════════ -->
+    <div class="section" id="section-users">
+      <div style="display:grid;grid-template-columns:1fr 340px;gap:1.25rem;align-items:start">
+
+        <!-- User list -->
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2><i class="bi bi-people-fill" style="color:#1d4ed8"></i>Registered Users</h2>
+              <div class="meta">GET /users &nbsp;·&nbsp; user-service:5003</div>
+            </div>
+            <span class="badge-pill badge-gray" id="user-count-badge">— users</span>
+          </div>
+          <div id="users-loading" class="loading-state">
+            <div class="spinner" style="width:28px;height:28px;margin:0 auto 0.75rem"></div>
+            <div>Fetching from user-service…</div>
+          </div>
+          <table class="data-table" id="users-table" style="display:none">
+            <thead>
               <tr>
-                <th>ID</th>
-                <th>Product</th>
-                <th>Price</th>
-                <th>Stock</th>
-                <th></th>
+                <th>User</th>
+                <th>Email</th>
+                <th>Role</th>
               </tr>
             </thead>
-            <tbody id="product-body"></tbody>
+            <tbody id="users-body"></tbody>
           </table>
         </div>
-      </div>
-    </div>
 
-    <!-- Place Order -->
-    <div class="col-lg-5">
-      <div class="card mb-4">
-        <div class="card-header bg-success text-white py-3">
-          <h5 class="mb-0"><i class="bi bi-cart-plus me-2"></i>Place an Order</h5>
-          <small class="opacity-75">POST /order — order-service:5002</small>
-        </div>
-        <div class="card-body">
-          <p class="text-muted small">Click a product row or enter an ID below to place an order via the order microservice.</p>
-          <div class="mb-3">
-            <label class="form-label fw-semibold">Product ID</label>
-            <input type="text" id="order-product-id" class="form-control form-control-lg"
-                   placeholder="e.g. 1" />
+        <!-- Register user form -->
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2><i class="bi bi-person-plus-fill" style="color:var(--success)"></i>Register User</h2>
+              <div class="meta">POST /users &nbsp;·&nbsp; user-service:5003</div>
+            </div>
           </div>
-          <button class="btn btn-success w-100 py-2 fw-semibold" onclick="placeOrder()">
-            <i class="bi bi-send me-2"></i>Place Order
-          </button>
-
-          <!-- Order Result -->
-          <div id="order-result" class="mt-3"></div>
+          <div class="panel-body">
+            <div class="form-field">
+              <label>Full Name</label>
+              <input type="text" id="reg-name" placeholder="e.g. Jane Doe" />
+            </div>
+            <div class="form-field">
+              <label>Email Address</label>
+              <input type="email" id="reg-email" placeholder="jane@example.com" />
+            </div>
+            <div class="form-field">
+              <label>Role</label>
+              <select id="reg-role">
+                <option value="customer">Customer</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+            <button class="btn-primary w-100" onclick="registerUser()" style="width:100%;justify-content:center">
+              <i class="bi bi-person-plus"></i>Register
+            </button>
+            <div id="reg-result" style="margin-top:0.75rem"></div>
+          </div>
         </div>
+
       </div>
+    </div><!-- /users -->
 
-      <!-- Order History -->
-      <div class="card">
-        <div class="card-header bg-dark text-white py-3">
-          <h5 class="mb-0"><i class="bi bi-clock-history me-2"></i>Order History
-            <span class="badge bg-white text-dark ms-2 float-end" id="order-count">0</span>
-          </h5>
-        </div>
-        <div class="card-body p-0">
-          <div id="order-history-empty" class="text-center py-4 text-muted small">
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: Orders
+    ════════════════════════════════════════════════════ -->
+    <div class="section" id="section-orders">
+      <div style="display:grid;grid-template-columns:1fr 340px;gap:1.25rem;align-items:start">
+
+        <!-- Order history -->
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2><i class="bi bi-clock-history" style="color:#b45309"></i>Order History</h2>
+              <div class="meta">Session — orders are stored in-memory</div>
+            </div>
+            <span class="badge-pill badge-gray" id="order-count-badge">0 orders</span>
+          </div>
+          <div id="order-history-empty" style="padding:2.5rem;text-align:center;color:var(--muted);font-size:0.875rem">
+            <i class="bi bi-inbox" style="font-size:2rem;display:block;margin-bottom:0.5rem;opacity:0.3"></i>
             No orders placed yet
           </div>
-          <ul class="list-group list-group-flush" id="order-history"></ul>
+          <div id="order-history-list"></div>
         </div>
-      </div>
-    </div>
 
-  </div>
-
-  <!-- Health Status -->
-  <div class="row g-3 mt-2">
-    <div class="col-12">
-      <div class="card">
-        <div class="card-header bg-secondary text-white py-2">
-          <h6 class="mb-0"><i class="bi bi-heart-pulse me-2"></i>Service Health (Kubernetes Probe Endpoints)</h6>
-        </div>
-        <div class="card-body">
-          <div class="row g-3">
-            <div class="col-md-6">
-              <div class="d-flex align-items-center gap-3 p-3 bg-light rounded">
-                <i class="bi bi-server fs-4 text-primary"></i>
-                <div class="flex-grow-1">
-                  <div class="fw-semibold">product-service <code>:5001/health</code></div>
-                  <div id="health-product" class="small text-muted">Checking...</div>
-                </div>
-                <span id="health-product-badge" class="badge bg-secondary">—</span>
-              </div>
-            </div>
-            <div class="col-md-6">
-              <div class="d-flex align-items-center gap-3 p-3 bg-light rounded">
-                <i class="bi bi-server fs-4 text-success"></i>
-                <div class="flex-grow-1">
-                  <div class="fw-semibold">order-service <code>:5002/health</code></div>
-                  <div id="health-order" class="small text-muted">Checking...</div>
-                </div>
-                <span id="health-order-badge" class="badge bg-secondary">—</span>
-              </div>
+        <!-- Place order form -->
+        <div class="panel">
+          <div class="panel-header">
+            <div>
+              <h2><i class="bi bi-cart-plus-fill" style="color:var(--success)"></i>Place an Order</h2>
+              <div class="meta">POST /order &nbsp;·&nbsp; order-service:5002</div>
             </div>
           </div>
+          <div class="panel-body">
+            <p style="font-size:0.82rem;color:var(--muted);margin-bottom:1rem">
+              Enter a product ID (or click a row in the Products tab) to place an order through the order microservice.
+            </p>
+            <div class="form-field">
+              <label>Product ID</label>
+              <input type="text" id="order-product-id" placeholder="e.g. 1, 2 or 3" />
+            </div>
+            <button class="btn-primary" onclick="placeOrder()" style="width:100%;justify-content:center" id="order-btn">
+              <i class="bi bi-send"></i>Place Order
+            </button>
+            <div id="order-result" style="margin-top:0.75rem"></div>
+          </div>
+        </div>
+
+      </div>
+    </div><!-- /orders -->
+
+
+    <!-- ════════════════════════════════════════════════════
+         SECTION: Health
+    ════════════════════════════════════════════════════ -->
+    <div class="section" id="section-health">
+      <div style="display:grid;grid-template-columns:1fr;gap:1rem">
+        <div class="health-card" id="hc-product">
+          <div class="health-icon" style="background:#ede9fe;color:#6d28d9">
+            <i class="bi bi-box-seam-fill"></i>
+          </div>
+          <div class="health-details">
+            <div class="health-name">product-service</div>
+            <div class="health-url">GET localhost:5001/health</div>
+            <div class="health-response" id="hr-product">Checking…</div>
+          </div>
+          <span id="hb-product" class="badge-pill badge-gray">—</span>
+        </div>
+        <div class="health-card" id="hc-order">
+          <div class="health-icon" style="background:#dbeafe;color:#1d4ed8">
+            <i class="bi bi-bag-check-fill"></i>
+          </div>
+          <div class="health-details">
+            <div class="health-name">order-service</div>
+            <div class="health-url">GET localhost:5002/health</div>
+            <div class="health-response" id="hr-order">Checking…</div>
+          </div>
+          <span id="hb-order" class="badge-pill badge-gray">—</span>
+        </div>
+        <div class="health-card" id="hc-user">
+          <div class="health-icon" style="background:#dcfce7;color:#15803d">
+            <i class="bi bi-people-fill"></i>
+          </div>
+          <div class="health-details">
+            <div class="health-name">user-service</div>
+            <div class="health-url">GET localhost:5003/health</div>
+            <div class="health-response" id="hr-user">Checking…</div>
+          </div>
+          <span id="hb-user" class="badge-pill badge-gray">—</span>
         </div>
       </div>
-    </div>
-  </div>
-</div>
+    </div><!-- /health -->
+
+  </div><!-- /content -->
+</div><!-- /main -->
+
+<!-- ── Toast container ────────────────────────────────────────────────────── -->
+<div id="toast-container"></div>
 
 <script>
+// ── Service URLs ──────────────────────────────────────────────────────────────
 const PRODUCT_URL = 'http://localhost:5011';
 const ORDER_URL   = 'http://localhost:5012';
-let orderCount = 0;
+const USER_URL    = 'http://localhost:5013';
 
-// ── Health checks ────────────────────────────────────────────────────────────
-async function checkHealth(url, badgeId, textId, navBadgeId) {
+let orderCount = 0;
+const SECTION_META = {
+  dashboard: { title: 'Dashboard',  sub: 'Overview of all microservices' },
+  products:  { title: 'Products',   sub: 'Catalogue from product-service' },
+  users:     { title: 'Users',      sub: 'User management via user-service' },
+  orders:    { title: 'Orders',     sub: 'Place orders via order-service' },
+  health:    { title: 'Health',     sub: 'Kubernetes probe endpoints status' },
+};
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+function showSection(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+  document.getElementById('section-' + name).classList.add('active');
+  document.querySelectorAll('.nav-item').forEach(n => {
+    if (n.getAttribute('onclick') && n.getAttribute('onclick').includes("'" + name + "'"))
+      n.classList.add('active');
+  });
+
+  const meta = SECTION_META[name];
+  document.getElementById('page-title').textContent    = meta.title;
+  document.getElementById('page-subtitle').textContent = meta.sub;
+
+  // Lazy-load section data
+  if (name === 'products') loadProducts();
+  if (name === 'users')    loadUsers();
+  if (name === 'health')   checkAllHealth();
+}
+
+// ── Toast Notifications ───────────────────────────────────────────────────────
+function toast(type, title, body) {
+  const icons = { success: 'bi-check-circle-fill', error: 'bi-x-circle-fill', info: 'bi-info-circle-fill' };
+  const colors = { success: '#15803d', error: '#b91c1c', info: '#1d4ed8' };
+  const el = document.createElement('div');
+  el.className = 'toast-item ' + type;
+  el.innerHTML = `
+    <i class="bi ${icons[type]}" style="color:${colors[type]};font-size:1.1rem;margin-top:1px"></i>
+    <div class="toast-msg">
+      <div class="toast-title">${title}</div>
+      ${body ? `<div class="toast-body">${body}</div>` : ''}
+    </div>`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(() => {
+    el.style.animation = 'fadeOut 0.3s ease forwards';
+    setTimeout(() => el.remove(), 300);
+  }, 3500);
+}
+
+// ── Avatar helper ─────────────────────────────────────────────────────────────
+const AVATAR_COLORS = ['#6d28d9','#1d4ed8','#15803d','#b45309','#be185d','#0f766e'];
+function avatarEl(name, idx) {
+  const initials = name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+  const color = AVATAR_COLORS[idx % AVATAR_COLORS.length];
+  return `<span class="avatar" style="background:${color}">${initials}</span>`;
+}
+
+// ── Health Checks ─────────────────────────────────────────────────────────────
+async function checkHealth(url, dotId, badgeId, textId, cardId) {
+  const dot    = document.getElementById(dotId);
+  const badge  = document.getElementById(badgeId);
+  const text   = document.getElementById(textId);
+  const card   = document.getElementById(cardId);
+  if (dot)   dot.className = 'status-dot checking';
+  if (badge) badge.className = 'badge-pill badge-gray';
+  if (badge) badge.textContent = 'checking…';
   try {
     const r = await fetch(url + '/health');
     const d = await r.json();
-    document.getElementById(badgeId).className = 'badge bg-success';
-    document.getElementById(badgeId).textContent = 'healthy';
-    document.getElementById(textId).textContent  = JSON.stringify(d);
-    document.getElementById(navBadgeId).className = 'service-badge bg-success text-white';
+    if (dot)   dot.className   = 'status-dot healthy';
+    if (badge) badge.className = 'badge-pill badge-green';
+    if (badge) badge.textContent = 'healthy';
+    if (text)  text.textContent  = JSON.stringify(d);
+    if (card)  card.style.borderColor = '#bbf7d0';
   } catch {
-    document.getElementById(badgeId).className = 'badge bg-danger';
-    document.getElementById(badgeId).textContent = 'unreachable';
-    document.getElementById(textId).textContent  = 'Could not connect';
-    document.getElementById(navBadgeId).className = 'service-badge bg-danger text-white';
+    if (dot)   dot.className   = 'status-dot unhealthy';
+    if (badge) badge.className = 'badge-pill badge-red';
+    if (badge) badge.textContent = 'unreachable';
+    if (text)  text.textContent  = 'Could not connect';
+    if (card)  card.style.borderColor = '#fecaca';
   }
+}
+
+function checkAllHealth() {
+  checkHealth(PRODUCT_URL, 'dot-product', 'hb-product', 'hr-product', 'hc-product');
+  checkHealth(ORDER_URL,   'dot-order',   'hb-order',   'hr-order',   'hc-order');
+  checkHealth(USER_URL,    'dot-user',    'hb-user',    'hr-user',    'hc-user');
 }
 
 // ── Load Products ─────────────────────────────────────────────────────────────
 async function loadProducts() {
+  document.getElementById('products-loading').style.display = '';
+  document.getElementById('products-table').style.display   = 'none';
   try {
     const r = await fetch(PRODUCT_URL + '/products');
     const products = await r.json();
-    const tbody = document.getElementById('product-body');
+    const tbody = document.getElementById('products-body');
     tbody.innerHTML = '';
 
     products.forEach(p => {
-      const stockClass = p.stock > 50 ? 'success' : p.stock > 10 ? 'warning' : 'danger';
+      const stockBadge = p.stock > 50
+        ? `<span class="badge-pill badge-green">${p.stock} units</span>`
+        : p.stock > 10
+        ? `<span class="badge-pill badge-yellow">${p.stock} units</span>`
+        : `<span class="badge-pill badge-red">${p.stock} units</span>`;
+
       tbody.innerHTML += `
-        <tr style="cursor:pointer" onclick="selectProduct('${p.id}')">
-          <td><span class="badge bg-secondary">#${p.id}</span></td>
-          <td class="fw-semibold">${p.name}</td>
-          <td class="text-success fw-bold">$${p.price.toFixed(2)}</td>
-          <td><span class="badge bg-${stockClass} stock-badge">${p.stock} units</span></td>
-          <td><button class="btn btn-sm btn-outline-success" onclick="event.stopPropagation();selectProduct('${p.id}')">
-            <i class="bi bi-cart-plus"></i>
-          </button></td>
+        <tr onclick="selectProduct('${p.id}')">
+          <td><span class="badge-pill badge-gray">#${p.id}</span></td>
+          <td style="font-weight:500">${p.name}</td>
+          <td style="font-weight:600;color:#15803d">$${p.price.toFixed(2)}</td>
+          <td>${stockBadge}</td>
+          <td>
+            <button class="btn-outline" style="font-size:0.75rem;padding:0.3rem 0.6rem"
+              onclick="event.stopPropagation();selectProduct('${p.id}')">
+              <i class="bi bi-cart-plus"></i> Order
+            </button>
+          </td>
         </tr>`;
     });
 
-    document.getElementById('product-loading').style.display = 'none';
-    document.getElementById('product-table').style.display   = '';
-    document.getElementById('product-count').textContent = products.length;
-    document.getElementById('stat-products').textContent  = products.length;
-  } catch (e) {
-    document.getElementById('product-loading').innerHTML =
-      '<div class="text-danger py-4"><i class="bi bi-exclamation-triangle fs-3"></i><br>Cannot reach product-service at localhost:5001</div>';
+    document.getElementById('products-loading').style.display = 'none';
+    document.getElementById('products-table').style.display   = '';
+    document.getElementById('product-count-badge').textContent = products.length + ' items';
+    document.getElementById('dash-products').textContent       = products.length;
+  } catch {
+    document.getElementById('products-loading').innerHTML = `
+      <div style="padding:2.5rem;text-align:center;color:#b91c1c">
+        <i class="bi bi-exclamation-triangle" style="font-size:2rem;display:block;margin-bottom:0.5rem"></i>
+        Cannot reach product-service
+      </div>`;
   }
 }
 
 function selectProduct(id) {
   document.getElementById('order-product-id').value = id;
-  document.getElementById('order-product-id').focus();
+  showSection('orders');
+  toast('info', 'Product selected', 'Product #' + id + ' is ready to order');
+}
+
+// ── Load Users ────────────────────────────────────────────────────────────────
+async function loadUsers() {
+  document.getElementById('users-loading').style.display = '';
+  document.getElementById('users-table').style.display   = 'none';
+  try {
+    const r = await fetch(USER_URL + '/users');
+    const users = await r.json();
+    const tbody = document.getElementById('users-body');
+    tbody.innerHTML = '';
+
+    users.forEach((u, i) => {
+      const roleBadge = u.role === 'admin'
+        ? `<span class="badge-pill badge-purple">admin</span>`
+        : `<span class="badge-pill badge-blue">customer</span>`;
+      tbody.innerHTML += `
+        <tr>
+          <td>
+            <div style="display:flex;align-items:center;gap:0.6rem">
+              ${avatarEl(u.name, i)}
+              <div>
+                <div style="font-weight:500;font-size:0.875rem">${u.name}</div>
+                <div style="font-size:0.72rem;color:var(--muted)">${u.id}</div>
+              </div>
+            </div>
+          </td>
+          <td style="font-size:0.85rem;color:var(--muted)">${u.email}</td>
+          <td>${roleBadge}</td>
+        </tr>`;
+    });
+
+    document.getElementById('users-loading').style.display = 'none';
+    document.getElementById('users-table').style.display   = '';
+    document.getElementById('user-count-badge').textContent = users.length + ' users';
+    document.getElementById('dash-users').textContent       = users.length;
+  } catch {
+    document.getElementById('users-loading').innerHTML = `
+      <div style="padding:2.5rem;text-align:center;color:#b91c1c">
+        <i class="bi bi-exclamation-triangle" style="font-size:2rem;display:block;margin-bottom:0.5rem"></i>
+        Cannot reach user-service
+      </div>`;
+  }
+}
+
+// ── Register User ─────────────────────────────────────────────────────────────
+async function registerUser() {
+  const name    = document.getElementById('reg-name').value.trim();
+  const email   = document.getElementById('reg-email').value.trim();
+  const role    = document.getElementById('reg-role').value;
+  const result  = document.getElementById('reg-result');
+  result.innerHTML = '';
+
+  if (!name || !email) {
+    result.innerHTML = `<div class="alert alert-warning"><i class="bi bi-exclamation-circle"></i>Please fill in name and email.</div>`;
+    return;
+  }
+
+  result.innerHTML = `<div class="alert alert-info"><span class="spinner" style="width:14px;height:14px"></span> Registering…</div>`;
+  try {
+    const r = await fetch(USER_URL + '/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, email, role }),
+    });
+    const d = await r.json();
+    if (r.ok) {
+      result.innerHTML = `
+        <div class="alert alert-success">
+          <i class="bi bi-check-circle-fill"></i>
+          <div><strong>${d.name}</strong> registered as <em>${d.role}</em></div>
+        </div>`;
+      document.getElementById('reg-name').value  = '';
+      document.getElementById('reg-email').value = '';
+      toast('success', 'User registered', d.name + ' (' + d.email + ')');
+      loadUsers();
+    } else {
+      result.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle-fill"></i>${d.error}</div>`;
+    }
+  } catch {
+    result.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle-fill"></i>Cannot reach user-service</div>`;
+  }
 }
 
 // ── Place Order ───────────────────────────────────────────────────────────────
 async function placeOrder() {
   const productId = document.getElementById('order-product-id').value.trim();
-  const resultDiv = document.getElementById('order-result');
+  const result    = document.getElementById('order-result');
+  const btn       = document.getElementById('order-btn');
+  result.innerHTML = '';
 
   if (!productId) {
-    resultDiv.style.display = 'block';
-    resultDiv.innerHTML = '<div class="alert alert-warning"><i class="bi bi-exclamation-circle me-2"></i>Please enter a product ID.</div>';
+    result.innerHTML = `<div class="alert alert-warning"><i class="bi bi-exclamation-circle"></i>Please enter a product ID.</div>`;
     return;
   }
 
-  resultDiv.style.display = 'block';
-  resultDiv.innerHTML = '<div class="alert alert-secondary"><span class="spinner-border spinner-border-sm me-2"></span>Contacting order-service...</div>';
+  btn.disabled = true;
+  result.innerHTML = `<div class="alert alert-info"><span class="spinner" style="width:14px;height:14px"></span> Contacting order-service…</div>`;
 
   try {
     const r = await fetch(ORDER_URL + '/order', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ product_id: productId })
+      body: JSON.stringify({ product_id: productId }),
     });
     const d = await r.json();
 
     if (r.ok) {
       orderCount++;
-      document.getElementById('stat-orders').textContent = orderCount;
-      document.getElementById('order-count').textContent = orderCount;
+      document.getElementById('dash-orders').textContent       = orderCount;
+      document.getElementById('order-count-badge').textContent = orderCount + ' orders';
       document.getElementById('order-history-empty').style.display = 'none';
 
-      resultDiv.innerHTML = `
+      result.innerHTML = `
         <div class="alert alert-success">
-          <i class="bi bi-check-circle-fill me-2"></i>
-          <strong>Order #${d.order_id} confirmed!</strong><br>
-          <small>${d.product_name} — $${d.unit_price?.toFixed(2)}</small>
+          <i class="bi bi-check-circle-fill"></i>
+          <div><strong>Order #${d.order_id} confirmed!</strong><br>
+          <span style="font-size:0.78rem">${d.product_name} — $${d.unit_price?.toFixed(2)}</span></div>
         </div>`;
 
-      // Add to history
-      const li = document.createElement('li');
-      li.className = 'list-group-item d-flex justify-content-between align-items-center';
-      li.innerHTML = `
-        <div>
-          <span class="fw-semibold">${d.product_name}</span>
-          <span class="text-muted small ms-2">Order #${d.order_id}</span>
+      // Add to order history
+      const item = document.createElement('div');
+      item.className = 'order-item';
+      item.innerHTML = `
+        <div style="display:flex;align-items:center;gap:0.75rem">
+          <div style="width:36px;height:36px;background:#dcfce7;border-radius:8px;display:flex;align-items:center;justify-content:center;color:#15803d">
+            <i class="bi bi-bag-check"></i>
+          </div>
+          <div>
+            <div style="font-weight:500;font-size:0.875rem">${d.product_name}</div>
+            <div style="font-size:0.72rem;color:var(--muted)">Order #${d.order_id} · $${d.unit_price?.toFixed(2)}</div>
+          </div>
         </div>
-        <span class="badge bg-success">confirmed</span>`;
-      document.getElementById('order-history').prepend(li);
+        <span class="badge-pill badge-green">confirmed</span>`;
+      document.getElementById('order-history-list').prepend(item);
+
       document.getElementById('order-product-id').value = '';
+      toast('success', 'Order confirmed', d.product_name + ' — $' + d.unit_price?.toFixed(2));
     } else {
-      resultDiv.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>${d.error}</div>`;
+      result.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle-fill"></i>${d.error}</div>`;
+      toast('error', 'Order failed', d.error);
     }
   } catch {
-    resultDiv.innerHTML = '<div class="alert alert-danger"><i class="bi bi-x-circle me-2"></i>Cannot reach order-service at localhost:5002</div>';
+    result.innerHTML = `<div class="alert alert-danger"><i class="bi bi-x-circle-fill"></i>Cannot reach order-service</div>`;
+    toast('error', 'Connection error', 'order-service is unreachable');
+  } finally {
+    btn.disabled = false;
   }
 }
 
+// ── Global Refresh ────────────────────────────────────────────────────────────
+function refreshAll() {
+  checkAllHealth();
+  loadProducts();
+  loadUsers();
+  toast('info', 'Refreshing', 'Reloading all service data…');
+}
+
 // ── Init ──────────────────────────────────────────────────────────────────────
-checkHealth(PRODUCT_URL, 'health-product-badge', 'health-product', 'badge-product');
-checkHealth(ORDER_URL,   'health-order-badge',   'health-order',   'badge-order');
+checkAllHealth();
 loadProducts();
+loadUsers();
 </script>
 </body>
 </html>

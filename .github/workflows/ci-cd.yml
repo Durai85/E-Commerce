@@ -34,11 +34,11 @@ jobs:
 
   # ══════════════════════════════════════════════════════════════════════════
   # JOB 1 — test
-  # Installs dependencies and runs pytest for both microservices.
+  # Installs dependencies and runs pytest for all three microservices.
   # If any test fails the job exits non-zero, which blocks Job 2 from running.
   # ══════════════════════════════════════════════════════════════════════════
   test:
-    name: Run Tests (Both Services)
+    name: Run Tests (All Services)
     runs-on: ubuntu-latest   # GitHub-managed Ubuntu runner (fresh VM per run)
 
     steps:
@@ -77,6 +77,16 @@ jobs:
       - name: Run order_service tests
         run: |
           pytest order_service/test_app.py -v --tb=short
+
+      # ── Step 7: Install User Service dependencies ─────────────────────────
+      - name: Install user_service dependencies
+        run: |
+          pip install -r user_service/requirements.txt
+
+      # ── Step 8: Run User Service tests ───────────────────────────────────
+      - name: Run user_service tests
+        run: |
+          pytest user_service/test_app.py -v --tb=short
 
 
   # ══════════════════════════════════════════════════════════════════════════
@@ -147,7 +157,19 @@ jobs:
           cache-from: type=gha
           cache-to:   type=gha,mode=max
 
-      # ── Step 6: Summarise the pipeline result ─────────────────────────────
+      # ── Step 6: Build & Push — User Service ──────────────────────────────
+      - name: Build and push user-service image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./user_service
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/user-service:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/user-service:${{ github.sha }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+      # ── Step 7: Summarise the pipeline result ─────────────────────────────
       # Writes a human-readable summary to the GitHub Actions run page.
       - name: Write job summary
         run: |
@@ -156,3 +178,4 @@ jobs:
           echo "|-------|------|" >> $GITHUB_STEP_SUMMARY
           echo "| product-service | \`latest\`, \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| order-service   | \`latest\`, \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| user-service    | \`latest\`, \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
