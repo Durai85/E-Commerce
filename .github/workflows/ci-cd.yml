@@ -1,109 +1,158 @@
-# ── CI/CD Pipeline — GitHub Actions ────────────────────────────────
-# This file lives at .github/workflows/ci-cd.yml.
-# GitHub Actions reads it and runs the defined jobs automatically.
+# ── .github/workflows/ci-cd.yml ──────────────────────────────────────────────
+# GitHub Actions CI/CD Pipeline for the E-Commerce Microservices Project.
 #
-# Workflow Trigger: Every push to the "main" branch.
-# What it does:
-#   1. Checks out your code.
-#   2. Installs Python and dependencies.
-#   3. Runs pytest to make sure nothing is broken.
-#   4. If tests pass, builds a Docker image and pushes it to DockerHub.
+# Pipeline overview:
 #
-# Required GitHub Secrets (set in repo Settings → Secrets):
-#   - DOCKERHUB_USERNAME: your DockerHub username
-#   - DOCKERHUB_TOKEN: a DockerHub access token (not your password)
+#   ┌─────────────────────────────┐
+#   │  Job 1: test                │  Runs pytest for BOTH services
+#   └────────────┬────────────────┘
+#                │ needs: test (only runs if tests pass)
+#   ┌────────────▼────────────────┐
+#   │  Job 2: build-and-push      │  Builds Docker images → pushes to DockerHub
+#   └─────────────────────────────┘
+#
+# Required GitHub Secrets (Settings → Secrets and variables → Actions):
+#   DOCKER_USERNAME  – your DockerHub username
+#   DOCKER_PASSWORD  – a DockerHub access token (not your account password)
+# ─────────────────────────────────────────────────────────────────────────────
 
 name: CI/CD Pipeline
 
+# ── Trigger ───────────────────────────────────────────────────────────────────
+# The pipeline runs automatically on every push to 'main' and on every
+# pull request that targets 'main'.  Build & Push only executes on push
+# (not on pull_request) so that unreviewed code is never published.
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   pull_request:
-    branches: [main]
+    branches:
+      - main
 
 jobs:
-  # ════════════════════════════════════════════════════════════════
-  # Job 1: Test & Build the Product Service
-  # ════════════════════════════════════════════════════════════════
-  product-service:
-    runs-on: ubuntu-latest   # GitHub provides a fresh Ubuntu VM
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # JOB 1 — test
+  # Installs dependencies and runs pytest for both microservices.
+  # If any test fails the job exits non-zero, which blocks Job 2 from running.
+  # ══════════════════════════════════════════════════════════════════════════
+  test:
+    name: Run Tests (Both Services)
+    runs-on: ubuntu-latest   # GitHub-managed Ubuntu runner (fresh VM per run)
 
     steps:
-      # Step 1: Download the repo code into the VM
-      - name: Checkout code
+      # ── Step 1: Checkout ──────────────────────────────────────────────────
+      # Downloads the repository code into the runner's workspace.
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Step 2: Install Python
-      - name: Set up Python
+      # ── Step 2: Set up Python ─────────────────────────────────────────────
+      # Installs the specified Python version and adds it to PATH.
+      - name: Set up Python 3.9
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.9"
+          # Cache pip packages between runs to speed up dependency installation.
+          cache: "pip"
 
-      # Step 3: Install dependencies
-      - name: Install dependencies
+      # ── Step 3: Install Product Service dependencies ───────────────────────
+      - name: Install product_service dependencies
         run: |
-          cd product_service
-          pip install -r requirements.txt
+          pip install -r product_service/requirements.txt
 
-      # Step 4: Run the automated tests
-      - name: Run tests
+      # ── Step 4: Run Product Service tests ────────────────────────────────
+      # -v  verbose output (shows each test name and PASS/FAIL)
+      # --tb=short  concise traceback on failure
+      - name: Run product_service tests
         run: |
-          cd product_service
-          pytest test_app.py -v
+          pytest product_service/test_app.py -v --tb=short
 
-      # Step 5: Log in to DockerHub
-      - name: Login to DockerHub
-        if: github.event_name == 'push'
+      # ── Step 5: Install Order Service dependencies ────────────────────────
+      - name: Install order_service dependencies
+        run: |
+          pip install -r order_service/requirements.txt
+
+      # ── Step 6: Run Order Service tests ──────────────────────────────────
+      - name: Run order_service tests
+        run: |
+          pytest order_service/test_app.py -v --tb=short
+
+
+  # ══════════════════════════════════════════════════════════════════════════
+  # JOB 2 — build-and-push
+  # Builds Docker images for both services and pushes them to DockerHub.
+  #
+  # 'needs: test' creates a dependency: this job only starts after the 'test'
+  # job completes successfully.  A test failure prevents any image from being
+  # published — enforcing "never ship broken code".
+  #
+  # 'if: github.event_name == "push"' skips this job on pull_request events
+  # so that images are only published from reviewed, merged commits.
+  # ══════════════════════════════════════════════════════════════════════════
+  build-and-push:
+    name: Build & Push Docker Images
+    runs-on: ubuntu-latest
+    needs: test                                # Depends on Job 1 succeeding
+    if: github.event_name == 'push'            # Only on pushes to main
+
+    steps:
+      # ── Step 1: Checkout ──────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ── Step 2: Set up Docker Buildx ─────────────────────────────────────
+      # Buildx is the modern Docker build engine.
+      # It supports multi-platform builds and advanced caching strategies.
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # ── Step 3: Log in to DockerHub ───────────────────────────────────────
+      # Uses the DOCKER_USERNAME and DOCKER_PASSWORD secrets stored in the
+      # GitHub repository settings.  Secrets are never exposed in logs.
+      - name: Log in to DockerHub
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      # Step 6: Build and push the Docker image
-      - name: Build and push Docker image
-        if: github.event_name == 'push'
+      # ── Step 4: Build & Push — Product Service ────────────────────────────
+      # context: ./product_service  → Docker build context (where Dockerfile is)
+      # push: true                  → push to registry after build
+      # tags:  <username>/product-service:latest  and  :<git-sha> (immutable)
+      - name: Build and push product-service image
         uses: docker/build-push-action@v5
         with:
           context: ./product_service
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/product-service:latest
+          # Two tags:
+          #   :latest   – always points to the most recent build
+          #   :<sha>    – immutable tag for rollbacks (best practice)
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/product-service:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/product-service:${{ github.sha }}
+          # Use GitHub Actions cache to speed up repeat builds.
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
 
-  # ════════════════════════════════════════════════════════════════
-  # Job 2: Test & Build the Order Service
-  # ════════════════════════════════════════════════════════════════
-  order-service:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Install dependencies
-        run: |
-          cd order_service
-          pip install -r requirements.txt
-
-      - name: Run tests
-        run: |
-          cd order_service
-          pytest test_app.py -v
-
-      - name: Login to DockerHub
-        if: github.event_name == 'push'
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Build and push Docker image
-        if: github.event_name == 'push'
+      # ── Step 5: Build & Push — Order Service ─────────────────────────────
+      - name: Build and push order-service image
         uses: docker/build-push-action@v5
         with:
           context: ./order_service
           push: true
-          tags: ${{ secrets.DOCKERHUB_USERNAME }}/order-service:latest
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/order-service:latest
+            ${{ secrets.DOCKERHUB_USERNAME }}/order-service:${{ github.sha }}
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+
+      # ── Step 6: Summarise the pipeline result ─────────────────────────────
+      # Writes a human-readable summary to the GitHub Actions run page.
+      - name: Write job summary
+        run: |
+          echo "## Docker images published" >> $GITHUB_STEP_SUMMARY
+          echo "| Image | Tags |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|------|" >> $GITHUB_STEP_SUMMARY
+          echo "| product-service | \`latest\`, \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| order-service   | \`latest\`, \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY

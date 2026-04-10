@@ -1,181 +1,193 @@
-# ── Terraform — Infrastructure as Code ─────────────────────────────
-# Instead of manually clicking through the AWS Console to create a
-# server, we *describe* the infrastructure we want in code.
-# Running `terraform apply` makes Terraform create it all for us.
+# ── terraform/main.tf ─────────────────────────────────────────────────────────
+# Infrastructure-as-Code for the E-Commerce DevOps project.
 #
-# Key Concepts:
-# - Provider: tells Terraform which cloud to talk to (AWS here).
-# - Resource: a thing Terraform creates (VPC, subnet, EC2 instance).
-# - user_data: a startup script that runs once when the EC2 boots.
-# - Security Group: a virtual firewall — we MUST open the right
-#   ports or nothing can reach our server.
+# What this file provisions:
+#   1. AWS Security Group  – firewall rules for the EC2 instance
+#   2. AWS EC2 Instance    – Ubuntu server that runs Minikube/K3s
+#
+# Prerequisites:
+#   - AWS CLI configured (`aws configure`) or credentials in env vars
+#   - An existing EC2 Key Pair (set var.key_pair_name)
+#   - Terraform >= 1.5 installed
+#
+# Usage:
+#   terraform init
+#   terraform plan -var="key_pair_name=my-key"
+#   terraform apply -var="key_pair_name=my-key"
+# ─────────────────────────────────────────────────────────────────────────────
 
+
+# ── Terraform Settings ────────────────────────────────────────────────────────
 terraform {
+  required_version = ">= 1.5.0"
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
-      version = "~> 5.0"
+      version = "~> 5.0"   # Permissive patch/minor upgrades; locks major version
     }
   }
-  required_version = ">= 1.0"
+
+  # ── Remote State (optional but recommended for teams) ────────────────────
+  # Uncomment and configure to store tfstate in S3 instead of locally.
+  # backend "s3" {
+  #   bucket         = "my-terraform-state-bucket"
+  #   key            = "ecommerce-devops/terraform.tfstate"
+  #   region         = "us-east-1"
+  #   encrypt        = true
+  #   dynamodb_table = "terraform-lock"
+  # }
 }
 
-# ── AWS Provider ───────────────────────────────────────────────────
+
+# ── Provider Configuration ────────────────────────────────────────────────────
+# Terraform uses the AWS provider to interact with the AWS API.
 provider "aws" {
   region = var.aws_region
-}
 
-# ── VPC (Virtual Private Cloud) ───────────────────────────────────
-# A VPC is your own isolated network inside AWS.
-resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  tags = {
-    Name = "ecommerce-vpc"
+  # Tag every resource created by this provider with project metadata.
+  # This enables cost tracking and resource grouping in the AWS Console.
+  default_tags {
+    tags = {
+      Project     = var.project_name
+      Environment = var.environment
+      ManagedBy   = "Terraform"
+    }
   }
 }
 
-# ── Public Subnet ─────────────────────────────────────────────────
-# A subnet is a range of IPs within your VPC. "Public" means
-# instances here can get a public IP and be reached from the internet.
-resource "aws_subnet" "public" {
-  vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.1.0/24"
-  map_public_ip_on_launch = true
-  availability_zone       = "${var.aws_region}a"
 
-  tags = {
-    Name = "ecommerce-public-subnet"
-  }
-}
+# ── Security Group ────────────────────────────────────────────────────────────
+# A Security Group acts as a virtual firewall for the EC2 instance.
+# It controls which ports accept inbound (ingress) traffic and which
+# outbound (egress) connections are allowed.
+resource "aws_security_group" "k8s_host_sg" {
+  name        = "${var.project_name}-k8s-host-sg"
+  description = "Security group for the Minikube/K3s host EC2 instance"
 
-# ── Internet Gateway ──────────────────────────────────────────────
-# Connects your VPC to the public internet.
-resource "aws_internet_gateway" "igw" {
-  vpc_id = aws_vpc.main.id
+  # ── Inbound Rules (ingress) ───────────────────────────────────────────────
 
-  tags = {
-    Name = "ecommerce-igw"
-  }
-}
-
-# ── Route Table ────────────────────────────────────────────────────
-# Tells traffic where to go. 0.0.0.0/0 = "all internet traffic"
-# goes through the Internet Gateway.
-resource "aws_route_table" "public" {
-  vpc_id = aws_vpc.main.id
-
-  route {
-    cidr_block = "0.0.0.0/0"
-    gateway_id = aws_internet_gateway.igw.id
-  }
-
-  tags = {
-    Name = "ecommerce-public-rt"
-  }
-}
-
-resource "aws_route_table_association" "public" {
-  subnet_id      = aws_subnet.public.id
-  route_table_id = aws_route_table.public.id
-}
-
-# ── Security Group (Firewall Rules) ───────────────────────────────
-resource "aws_security_group" "k8s_sg" {
-  name        = "ecommerce-k8s-sg"
-  description = "Allow SSH, HTTP, K8s API, and NodePort traffic"
-  vpc_id      = aws_vpc.main.id
-
-  # SSH access
+  # SSH (port 22): required to connect and manage the server.
+  # In a production environment restrict cidr_blocks to your office/VPN IP.
   ingress {
+    description = "SSH access"
     from_port   = 22
     to_port     = 22
     protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
+    cidr_blocks = ["0.0.0.0/0"]   # Restrict to your IP in production!
   }
 
-  # HTTP
+  # HTTP (port 80): for exposing Kubernetes services via a NodePort or ingress.
   ingress {
+    description = "HTTP traffic"
     from_port   = 80
     to_port     = 80
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Kubernetes API server
+  # HTTPS (port 443): for TLS-terminated traffic (cert-manager / Let's Encrypt).
   ingress {
-    from_port   = 6443
-    to_port     = 6443
+    description = "HTTPS traffic"
+    from_port   = 443
+    to_port     = 443
     protocol    = "tcp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Kubernetes NodePort range — this is how we access our services
-  ingress {
-    from_port   = 30000
-    to_port     = 32767
-    protocol    = "tcp"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  # Allow all outbound traffic
+  # ── Outbound Rules (egress) ───────────────────────────────────────────────
+  # Allow all outbound traffic so the server can pull Docker images,
+  # install packages, and communicate with the Kubernetes API.
   egress {
+    description = "Allow all outbound traffic"
     from_port   = 0
     to_port     = 0
-    protocol    = "-1"
+    protocol    = "-1"             # -1 means all protocols
     cidr_blocks = ["0.0.0.0/0"]
   }
 
   tags = {
-    Name = "ecommerce-k8s-sg"
+    Name = "${var.project_name}-sg"
   }
 }
 
-# ── EC2 Instance ──────────────────────────────────────────────────
-# This is the virtual server where Kubernetes will run.
-resource "aws_instance" "k8s_server" {
-  ami                    = var.ami_id
-  instance_type          = var.instance_type
+
+# ── EC2 Instance ──────────────────────────────────────────────────────────────
+# This Ubuntu server will have Minikube (or K3s) installed on it via the
+# user_data bootstrap script below.
+resource "aws_instance" "k8s_host" {
+  ami           = var.ami_id
+  instance_type = var.instance_type   # t3.medium: 2 vCPU, 4 GiB RAM
+
   key_name               = var.key_pair_name
-  subnet_id              = aws_subnet.public.id
-  vpc_security_group_ids = [aws_security_group.k8s_sg.id]
+  vpc_security_group_ids = [aws_security_group.k8s_host_sg.id]
 
-  # user_data = a bash script that runs when the instance first boots.
-  # We use it to install Docker and Minikube automatically.
-  user_data = <<-EOF
-              #!/bin/bash
-              set -e
+  # Give the instance a public IP so you can SSH to it directly.
+  # For a private-subnet setup, use a bastion or AWS Systems Manager.
+  associate_public_ip_address = true
 
-              # Update system packages
-              apt-get update -y
-              apt-get upgrade -y
-
-              # Install Docker
-              apt-get install -y docker.io curl
-              systemctl enable docker
-              systemctl start docker
-              usermod -aG docker ubuntu
-
-              # Install kubectl
-              curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-              install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
-
-              # Install Minikube
-              curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
-              install minikube-linux-amd64 /usr/local/bin/minikube
-
-              # Start Minikube as the ubuntu user
-              su - ubuntu -c "minikube start --driver=docker"
-              EOF
-
+  # ── Root Volume ───────────────────────────────────────────────────────────
+  # 30 GiB is the minimum comfortable size for Docker images + K8s overhead.
   root_block_device {
-    volume_size = 20
-    volume_type = "gp3"
+    volume_type           = "gp3"   # gp3 is cheaper and faster than gp2
+    volume_size           = 30      # GiB
+    delete_on_termination = true    # Clean up EBS volume when instance terminates
+    encrypted             = true    # Encrypt at rest (security best practice)
   }
+
+  # ── User Data Bootstrap Script ────────────────────────────────────────────
+  # This shell script runs once as root when the instance first boots.
+  # It installs Docker and K3s (a lightweight Kubernetes distribution).
+  # K3s is easier to set up than Minikube on a headless server.
+  user_data = <<-EOF
+    #!/bin/bash
+    set -euo pipefail
+
+    # ── System Update ────────────────────────────────────────────────────────
+    apt-get update -y
+    apt-get upgrade -y
+
+    # ── Install Docker ───────────────────────────────────────────────────────
+    # Docker is used by K3s as the container runtime.
+    apt-get install -y docker.io curl git
+    systemctl enable docker
+    systemctl start docker
+
+    # ── Install K3s (lightweight Kubernetes) ─────────────────────────────────
+    # K3s sets up a single-node cluster automatically.
+    # INSTALL_K3S_EXEC flags disable the local load balancer (we use NodePort).
+    curl -sfL https://get.k3s.io | INSTALL_K3S_EXEC="--docker" sh -
+
+    # ── Export kubeconfig for the ubuntu user ─────────────────────────────
+    mkdir -p /home/ubuntu/.kube
+    cp /etc/rancher/k3s/k3s.yaml /home/ubuntu/.kube/config
+    chown ubuntu:ubuntu /home/ubuntu/.kube/config
+    echo 'export KUBECONFIG=/home/ubuntu/.kube/config' >> /home/ubuntu/.bashrc
+
+    echo "Bootstrap complete — K3s cluster is ready."
+  EOF
 
   tags = {
-    Name = "ecommerce-k8s-server"
+    Name = "${var.project_name}-k8s-host"
   }
+}
+
+
+# ── Outputs ───────────────────────────────────────────────────────────────────
+# Outputs are printed after `terraform apply` and can be consumed by other
+# Terraform modules or CI/CD pipelines.
+
+output "instance_public_ip" {
+  description = "Public IP of the K3s host — use this to SSH: ssh ubuntu@<ip>"
+  value       = aws_instance.k8s_host.public_ip
+}
+
+output "instance_id" {
+  description = "EC2 Instance ID (useful for AWS CLI commands)"
+  value       = aws_instance.k8s_host.id
+}
+
+output "ssh_command" {
+  description = "Ready-to-use SSH command"
+  value       = "ssh -i ~/.ssh/${var.key_pair_name}.pem ubuntu@${aws_instance.k8s_host.public_ip}"
 }

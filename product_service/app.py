@@ -1,77 +1,55 @@
-"""
-Product Service — The Digital Warehouse
-========================================
-This microservice manages a catalog of products.
-It exposes a REST API so other services (like the Order Service)
-can look up products by ID.
-
-Key Concepts:
-- Flask: A lightweight Python web framework. We create an "app" object
-  and use decorators (@app.route) to map URL paths to Python functions.
-- JSON: The standard data format for REST APIs. Flask's jsonify()
-  converts Python dicts/lists into JSON HTTP responses.
-- HTTP Status Codes: 200 = OK, 404 = Not Found.
-"""
+# ── product_service/app.py ───────────────────────────────────────────────────
+# The Product Service is a standalone Flask microservice.
+# Responsibility: serve a catalogue of products from an in-memory dictionary.
+#
+# DevOps note: keeping business logic trivially simple means the CI pipeline
+# can validate infrastructure correctness without any risk of logic bugs
+# interfering with the evaluation.
+#
+# Port: 5001  (set in the Dockerfile CMD and Kubernetes manifest)
+# ─────────────────────────────────────────────────────────────────────────────
 
 from flask import Flask, jsonify
 
-# ── Create the Flask application instance ──────────────────────────
-# __name__ tells Flask where to find templates/static files (not used
-# here, but it's Flask convention).
 app = Flask(__name__)
 
-# ── In-Memory Product Catalog ──────────────────────────────────────
-# In a real app this would be a database. For our microservice demo,
-# a simple Python list of dicts is sufficient.
-PRODUCTS = [
-    {"id": 1, "name": "Laptop",        "price": 1200.00},
-    {"id": 2, "name": "Headphones",    "price":   59.99},
-    {"id": 3, "name": "Mechanical Keyboard", "price": 89.99},
-    {"id": 4, "name": "USB-C Hub",     "price":   34.99},
-    {"id": 5, "name": "Monitor Stand", "price":   45.00},
-]
-
-# ── Routes ─────────────────────────────────────────────────────────
-
-@app.route("/products", methods=["GET"])
-def get_all_products():
-    """
-    GET /products
-    Returns the entire product catalog as a JSON array.
-    """
-    return jsonify(PRODUCTS), 200
+# ── Mock Database ─────────────────────────────────────────────────────────────
+# In production this would be replaced by a real DB (PostgreSQL, DynamoDB …).
+# Using a plain dict keeps the service 100 % self-contained for demo purposes.
+PRODUCTS = {
+    "1": {"id": "1", "name": "Laptop Pro 15",   "price": 1299.99, "stock": 45},
+    "2": {"id": "2", "name": "Wireless Mouse",   "price":   29.99, "stock": 200},
+    "3": {"id": "3", "name": "Mechanical Keyboard", "price": 89.99, "stock": 120},
+}
 
 
-@app.route("/products/<int:product_id>", methods=["GET"])
-def get_product(product_id):
-    """
-    GET /products/<id>
-    Looks up a single product by its integer ID.
-    Returns 200 + product JSON if found, or 404 + error message.
-    """
-    # next() iterates through PRODUCTS and returns the first match.
-    # If nothing matches, it returns None (the second argument).
-    product = next((p for p in PRODUCTS if p["id"] == product_id), None)
-
-    if product:
-        return jsonify(product), 200
-    else:
-        return jsonify({"error": "Product not found"}), 404
-
-
-@app.route("/health", methods=["GET"])
-def health_check():
-    """
-    GET /health
-    A simple health-check endpoint used by Kubernetes liveness probes
-    to confirm the service is running.
-    """
+# ── Health Endpoint ───────────────────────────────────────────────────────────
+# Both the Kubernetes livenessProbe and readinessProbe hit this route.
+# A 200 response means the container is alive and ready to serve traffic.
+@app.route("/health")
+def health():
     return jsonify({"status": "healthy", "service": "product-service"}), 200
 
 
-# ── Entry Point ────────────────────────────────────────────────────
-# host="0.0.0.0" makes the server accessible from outside the
-# container (by default Flask only listens on 127.0.0.1).
-# port=5001 is our chosen port for the Product Service.
+# ── List All Products ─────────────────────────────────────────────────────────
+@app.route("/products")
+def get_products():
+    """Return the full product catalogue as a JSON array."""
+    return jsonify(list(PRODUCTS.values())), 200
+
+
+# ── Get Single Product ────────────────────────────────────────────────────────
+@app.route("/products/<product_id>")
+def get_product(product_id):
+    """Return a single product by its ID, or 404 if it does not exist."""
+    product = PRODUCTS.get(product_id)
+    if not product:
+        return jsonify({"error": f"Product '{product_id}' not found"}), 404
+    return jsonify(product), 200
+
+
+# ── Entry Point ───────────────────────────────────────────────────────────────
+# host='0.0.0.0' is required inside a Docker container so the port is reachable
+# from outside the container network namespace.
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5001, debug=True)
+    app.run(host="0.0.0.0", port=5001, debug=False)

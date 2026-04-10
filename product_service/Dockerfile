@@ -1,24 +1,45 @@
-# ── Stage: Production Image ────────────────────────────────────────
-# We use python:3.11-slim to keep the image small (~150MB vs ~900MB
-# for the full image). "slim" removes build tools we don't need.
-FROM python:3.11-slim
+# ── product_service/Dockerfile ───────────────────────────────────────────────
+# Multi-stage-ready, production-grade Dockerfile for the Product Service.
+#
+# Design decisions:
+#   - python:3.9-slim  → minimal attack surface vs the full python image
+#   - WORKDIR /app     → keeps the container filesystem organised
+#   - Copy requirements first → Docker layer-cache means 'pip install' only
+#                                re-runs when requirements.txt changes, not on
+#                                every code edit (speeds up CI builds).
+#   - Non-root user    → security best practice; avoids privilege escalation
+# ─────────────────────────────────────────────────────────────────────────────
 
-# Set the working directory *inside* the container.
-# All subsequent commands run relative to this path.
+# ── Base Image ────────────────────────────────────────────────────────────────
+FROM python:3.9-slim
+
+# ── Metadata ──────────────────────────────────────────────────────────────────
+LABEL maintainer="devops-team" \
+      service="product-service" \
+      version="1.0"
+
+# ── Working Directory ─────────────────────────────────────────────────────────
+# All subsequent COPY, RUN, CMD instructions operate relative to /app.
 WORKDIR /app
 
-# Copy requirements first (Docker caching optimization).
-# If requirements.txt hasn't changed, Docker skips the pip install
-# step on rebuilds — saving minutes of build time.
+# ── Install Dependencies (cached layer) ──────────────────────────────────────
+# Copy only the dependency manifest first so Docker can cache this layer.
+# The layer is invalidated only when requirements.txt changes.
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Now copy the rest of the application code.
+# ── Copy Application Source ───────────────────────────────────────────────────
 COPY . .
 
-# Document which port this container listens on.
-# (This is informational — you still need -p to publish it.)
+# ── Security: Run as Non-Root User ───────────────────────────────────────────
+RUN adduser --disabled-password --gecos "" appuser
+USER appuser
+
+# ── Network ───────────────────────────────────────────────────────────────────
+# Documents the port the application listens on.
+# The Kubernetes manifest maps this to a Service port.
 EXPOSE 5001
 
-# The command that runs when the container starts.
+# ── Start Command ─────────────────────────────────────────────────────────────
+# Use the module directly instead of the Flask dev server in production.
 CMD ["python", "app.py"]

@@ -1,3 +1,10 @@
-flask==3.1.1
-pytest==8.3.5
-requests==2.32.3
+# ── order_service/requirements.txt ───────────────────────────────────────────
+# Pinned versions ensure reproducible builds.
+#
+# Flask    – web framework
+# requests – HTTP client used to call the Product Service
+# pytest   – test runner executed in CI Job 1
+# ─────────────────────────────────────────────────────────────────────────────
+Flask==3.0.3
+requests==2.31.0
+pytest==8.1.1

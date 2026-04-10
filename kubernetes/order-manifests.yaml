@@ -1,0 +1,111 @@
+# ── kubernetes/order-manifests.yaml ──────────────────────────────────────────
+# Kubernetes manifests for the Order Service.
+# Contains TWO resources:
+#   1. Deployment  – manages the running Pods
+#   2. Service     – stable ClusterIP DNS entry
+#
+# Key difference from product-manifests.yaml:
+#   The Deployment injects PRODUCT_SERVICE_URL as an environment variable using
+#   the Kubernetes internal DNS name of the product-service Service.
+#   This is how microservices discover each other inside a Kubernetes cluster.
+#
+# Apply with: kubectl apply -f kubernetes/order-manifests.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RESOURCE 1: Deployment
+# ══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: order-service
+  labels:
+    app: order-service
+    tier: backend
+
+spec:
+  # 2 replicas → high availability; rolling updates cause zero downtime.
+  replicas: 2
+
+  selector:
+    matchLabels:
+      app: order-service
+
+  template:
+    metadata:
+      labels:
+        app: order-service
+        tier: backend
+
+    spec:
+      containers:
+        - name: order-service
+          image: durai85/order-service:latest
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 5002
+
+          # ── Environment Variables ─────────────────────────────────────────
+          # PRODUCT_SERVICE_URL is read by order_service/app.py at startup.
+          # Kubernetes DNS automatically resolves "product-service" to the
+          # ClusterIP of the product-service Service defined in
+          # product-manifests.yaml.
+          # Format: http://<service-name>.<namespace>.svc.cluster.local
+          # The short form "http://product-service" works within the same
+          # namespace (default behaviour).
+          env:
+            - name: PRODUCT_SERVICE_URL
+              value: "http://product-service"
+
+          # ── Resource Limits ───────────────────────────────────────────────
+          resources:
+            requests:
+              cpu: "100m"
+              memory: "128Mi"
+            limits:
+              cpu: "250m"
+              memory: "256Mi"
+
+          # ── Liveness Probe ────────────────────────────────────────────────
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            failureThreshold: 3
+
+          # ── Readiness Probe ───────────────────────────────────────────────
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5002
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RESOURCE 2: Service (ClusterIP)
+# ══════════════════════════════════════════════════════════════════════════════
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: order-service
+  labels:
+    app: order-service
+
+spec:
+  type: ClusterIP
+
+  selector:
+    app: order-service
+
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 5002

@@ -1,108 +1,90 @@
-"""
-Order Service — The Checkout Counter
-=====================================
-This microservice handles placing orders. Before confirming any order,
-it makes an HTTP request to the Product Service to verify the product
-actually exists. This is the core of microservice communication.
-
-Key Concepts:
-- Inter-Service Communication: Microservices talk to each other over
-  HTTP, just like a browser talks to a website. We use Python's
-  `requests` library to make these calls.
-- Environment Variables (os.environ): Configuration that can change
-  between environments (local, staging, production) is stored in
-  env vars, NOT hardcoded. This lets Kubernetes or Docker inject
-  the correct URL at runtime.
-- requests.get(): Sends an HTTP GET request and returns a Response
-  object with .status_code, .json(), etc.
-"""
+# ── order_service/app.py ─────────────────────────────────────────────────────
+# The Order Service is a Flask microservice that accepts customer orders.
+# It calls the Product Service over HTTP to validate that the product exists
+# before confirming the order — demonstrating inter-service communication.
+#
+# DevOps note: PRODUCT_SERVICE_URL is injected as an environment variable.
+# • In Docker Compose: set to http://product_service:5001
+# • In Kubernetes:     set to http://product-service (ClusterIP DNS)
+# • Locally:           defaults to http://localhost:5001
+#
+# Port: 5002
+# ─────────────────────────────────────────────────────────────────────────────
 
 import os
-import requests as http_client  # renamed to avoid confusion with Flask's request
+import requests
 from flask import Flask, jsonify, request
 
-# ── Create Flask app ───────────────────────────────────────────────
 app = Flask(__name__)
 
-# ── Configuration ──────────────────────────────────────────────────
-# In Docker/Kubernetes, this env var will point to the Product Service
-# container. Locally, it defaults to localhost:5001.
+# ── Configuration via Environment Variable ────────────────────────────────────
+# Reading config from the environment is a 12-Factor App principle.
+# It decouples the service from any specific deployment topology.
 PRODUCT_SERVICE_URL = os.environ.get("PRODUCT_SERVICE_URL", "http://localhost:5001")
 
-# ── In-Memory Order Storage ───────────────────────────────────────
-# In a real app this would be a database. We use a simple list here.
-orders = []
-order_counter = 0  # auto-incrementing ID
+# ── In-Memory Order Store ─────────────────────────────────────────────────────
+_orders = []
+_next_order_id = 1
 
 
-@app.route("/orders", methods=["POST"])
-def create_order():
+# ── Health Endpoint ───────────────────────────────────────────────────────────
+# Kubernetes liveness and readiness probes call this route.
+@app.route("/health")
+def health():
+    return jsonify({"status": "healthy", "service": "order-service"}), 200
+
+
+# ── Place Order ───────────────────────────────────────────────────────────────
+@app.route("/order", methods=["POST"])
+def place_order():
     """
-    POST /orders
-    Body: { "product_id": 1, "quantity": 2 }
-
-    Workflow:
-    1. Parse the JSON body.
-    2. Call the Product Service to check if the product exists.
-    3. If it exists → create the order and return 201 Created.
-    4. If it doesn't → return 404 with an error message.
-    5. If the Product Service is unreachable → return 503.
+    Accept a JSON body with a 'product_id' field.
+    1. Validate the request body.
+    2. Call the Product Service to confirm the product exists.
+    3. If found, create and store the order; return 201 Created.
     """
-    global order_counter
-    data = request.get_json()
+    global _next_order_id
 
-    # ── Validate input ─────────────────────────────────────────
-    if not data or "product_id" not in data or "quantity" not in data:
-        return jsonify({"error": "Missing product_id or quantity"}), 400
+    body = request.get_json(silent=True)
+    if not body or "product_id" not in body:
+        return jsonify({"error": "Request body must contain 'product_id'"}), 400
 
-    product_id = data["product_id"]
-    quantity = data["quantity"]
+    product_id = str(body["product_id"])
 
-    # ── Call Product Service (inter-service communication) ─────
+    # ── Inter-Service Call ────────────────────────────────────────────────────
+    # This is the key microservice pattern: the Order Service does NOT
+    # duplicate the product catalogue.  It delegates to the authoritative
+    # source — the Product Service — via its internal DNS name.
     try:
-        response = http_client.get(
-            f"{PRODUCT_SERVICE_URL}/products/{product_id}",
-            timeout=5  # seconds — don't hang forever if the service is down
-        )
-    except http_client.exceptions.ConnectionError:
-        return jsonify({"error": "Product Service is unavailable"}), 503
+        product_url = f"{PRODUCT_SERVICE_URL}/products/{product_id}"
+        resp = requests.get(product_url, timeout=5)
+    except requests.exceptions.ConnectionError:
+        return jsonify({"error": "Product Service is unreachable"}), 503
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Product Service timed out"}), 504
 
-    if response.status_code == 404:
-        return jsonify({"error": f"Product {product_id} not found"}), 404
+    if resp.status_code == 404:
+        return jsonify({"error": f"Product '{product_id}' does not exist"}), 404
 
-    # ── Product exists — create the order ──────────────────────
-    product = response.json()
-    order_counter += 1
+    if resp.status_code != 200:
+        return jsonify({"error": "Unexpected response from Product Service"}), 502
+
+    product = resp.json()
+
+    # ── Create the Order ──────────────────────────────────────────────────────
     order = {
-        "order_id": order_counter,
-        "product": product,
-        "quantity": quantity,
-        "total_price": product["price"] * quantity,
-        "status": "confirmed",
+        "order_id":     _next_order_id,
+        "product_id":   product_id,
+        "product_name": product.get("name"),
+        "unit_price":   product.get("price"),
+        "status":       "confirmed",
     }
-    orders.append(order)
+    _orders.append(order)
+    _next_order_id += 1
 
     return jsonify(order), 201
 
 
-@app.route("/orders", methods=["GET"])
-def get_all_orders():
-    """
-    GET /orders
-    Returns all orders that have been placed.
-    """
-    return jsonify(orders), 200
-
-
-@app.route("/health", methods=["GET"])
-def health_check():
-    """
-    GET /health
-    Kubernetes liveness probe endpoint.
-    """
-    return jsonify({"status": "healthy", "service": "order-service"}), 200
-
-
-# ── Entry Point ────────────────────────────────────────────────────
+# ── Entry Point ───────────────────────────────────────────────────────────────
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5002, debug=True)
+    app.run(host="0.0.0.0", port=5002, debug=False)

@@ -1,119 +1,92 @@
-"""
-Tests for the Order Service
-=============================
-Key Concept — Mocking:
-  The Order Service depends on the Product Service being available.
-  In unit tests, we don't want to run the actual Product Service.
-  Instead, we use unittest.mock.patch() to *replace* the HTTP call
-  with a fake ("mock") that returns whatever we tell it to.
-
-  This keeps tests:
-  - Fast (no real network calls)
-  - Isolated (no dependency on another service running)
-  - Deterministic (same result every time)
-"""
+# ── order_service/test_app.py ─────────────────────────────────────────────────
+# Unit tests for the Order Service.
+# Run with: pytest test_app.py -v
+#
+# Key technique: unittest.mock.patch is used to replace the real HTTP call to
+# the Product Service with a controlled fake (mock).  This means the tests:
+#   ✓ run without a live Product Service
+#   ✓ are deterministic and fast
+#   ✓ cover multiple scenarios (success, 404, connection error)
+# ─────────────────────────────────────────────────────────────────────────────
 
 import pytest
 from unittest.mock import patch, MagicMock
-from app import app, orders, order_counter
+import requests as real_requests
+
+from app import app
 
 
+# ── Fixture ───────────────────────────────────────────────────────────────────
 @pytest.fixture
 def client():
-    """Provides a fresh test client and resets order state between tests."""
     app.config["TESTING"] = True
-    # Reset the in-memory order store before each test
-    orders.clear()
-    import app as app_module
-    app_module.order_counter = 0
     with app.test_client() as client:
         yield client
 
 
-# ── POST /orders — success ─────────────────────────────────────────
+# ── Health Check ──────────────────────────────────────────────────────────────
+def test_health_returns_200(client):
+    """Kubernetes probes depend on this returning HTTP 200."""
+    response = client.get("/health")
+    assert response.status_code == 200
 
-@patch("app.http_client.get")  # Replace requests.get in app.py
-def test_create_order_success(mock_get, client):
+
+def test_health_returns_healthy_status(client):
+    response = client.get("/health")
+    data = response.get_json()
+    assert data["status"] == "healthy"
+
+
+# ── Place Order — Happy Path ───────────────────────────────────────────────────
+def test_place_order_success(client):
     """
-    Simulate the Product Service returning a valid product.
-    The order should be created with status 201.
+    Mock a successful 200 response from the Product Service.
+    The order should be created and returned with status 'confirmed'.
     """
-    # Configure the mock to behave like a successful HTTP response
-    mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {
-        "id": 1, "name": "Laptop", "price": 1200.00
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = {
+        "id": "1", "name": "Laptop Pro 15", "price": 1299.99, "stock": 45
     }
-    mock_get.return_value = mock_response
 
-    # Send the order request
-    response = client.post("/orders", json={
-        "product_id": 1,
-        "quantity": 2
-    })
+    with patch("app.requests.get", return_value=mock_resp):
+        response = client.post("/order", json={"product_id": "1"})
 
     assert response.status_code == 201
     data = response.get_json()
-    assert data["order_id"] == 1
-    assert data["quantity"] == 2
-    assert data["total_price"] == 2400.00
     assert data["status"] == "confirmed"
+    assert data["product_id"] == "1"
+    assert data["product_name"] == "Laptop Pro 15"
 
 
-# ── POST /orders — product not found ──────────────────────────────
-
-@patch("app.http_client.get")
-def test_create_order_product_not_found(mock_get, client):
-    """
-    Simulate the Product Service returning 404.
-    Our Order Service should also return 404.
-    """
-    mock_response = MagicMock()
-    mock_response.status_code = 404
-    mock_get.return_value = mock_response
-
-    response = client.post("/orders", json={
-        "product_id": 999,
-        "quantity": 1
-    })
-
-    assert response.status_code == 404
-    data = response.get_json()
-    assert "error" in data
-
-
-# ── POST /orders — missing fields ─────────────────────────────────
-
-def test_create_order_missing_fields(client):
-    """Should return 400 if product_id or quantity is missing."""
-    response = client.post("/orders", json={"product_id": 1})
+# ── Place Order — Validation Errors ──────────────────────────────────────────
+def test_place_order_missing_body_returns_400(client):
+    """Missing product_id must be rejected with 400 Bad Request."""
+    response = client.post("/order", json={})
     assert response.status_code == 400
 
 
-# ── POST /orders — Product Service down ───────────────────────────
+def test_place_order_no_json_returns_400(client):
+    response = client.post("/order", data="not-json", content_type="text/plain")
+    assert response.status_code == 400
 
-@patch("app.http_client.get")
-def test_create_order_service_unavailable(mock_get, client):
-    """
-    Simulate the Product Service being completely unreachable.
-    Our service should return 503 Service Unavailable.
-    """
-    import requests
-    mock_get.side_effect = requests.exceptions.ConnectionError()
 
-    response = client.post("/orders", json={
-        "product_id": 1,
-        "quantity": 1
-    })
+# ── Place Order — Product Not Found ──────────────────────────────────────────
+def test_place_order_product_not_found_returns_404(client):
+    """If the Product Service returns 404, the Order Service must return 404."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = 404
+
+    with patch("app.requests.get", return_value=mock_resp):
+        response = client.post("/order", json={"product_id": "9999"})
+
+    assert response.status_code == 404
+
+
+# ── Place Order — Product Service Unreachable ─────────────────────────────────
+def test_place_order_product_service_down_returns_503(client):
+    """A ConnectionError from requests must surface as 503 Service Unavailable."""
+    with patch("app.requests.get", side_effect=real_requests.exceptions.ConnectionError):
+        response = client.post("/order", json={"product_id": "1"})
 
     assert response.status_code == 503
-
-
-# ── GET /health ────────────────────────────────────────────────────
-
-def test_health_check(client):
-    """Health endpoint should return 200."""
-    response = client.get("/health")
-    assert response.status_code == 200
-    data = response.get_json()
-    assert data["status"] == "healthy"

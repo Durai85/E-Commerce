@@ -1,0 +1,121 @@
+# ── kubernetes/product-manifests.yaml ────────────────────────────────────────
+# Kubernetes manifests for the Product Service.
+# Contains TWO resources separated by "---":
+#   1. Deployment  – manages the running Pods (containers)
+#   2. Service     – gives the Deployment a stable internal DNS name
+#
+# Apply with: kubectl apply -f kubernetes/product-manifests.yaml
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RESOURCE 1: Deployment
+# A Deployment is a controller that ensures the desired number of Pod replicas
+# are always running.  If a Pod crashes, Kubernetes automatically restarts it.
+# ══════════════════════════════════════════════════════════════════════════════
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: product-service
+  labels:
+    app: product-service
+    tier: backend
+
+spec:
+  # ── Replica Count ──────────────────────────────────────────────────────────
+  # Running 2 replicas provides high availability: if one Pod is evicted or
+  # the node it runs on fails, the other Pod keeps serving requests.
+  replicas: 2
+
+  # ── Pod Selector ──────────────────────────────────────────────────────────
+  # The Deployment manages Pods whose labels match this selector.
+  selector:
+    matchLabels:
+      app: product-service
+
+  # ── Pod Template ──────────────────────────────────────────────────────────
+  template:
+    metadata:
+      labels:
+        app: product-service
+        tier: backend
+
+    spec:
+      containers:
+        - name: product-service
+          # Replace YOUR_DOCKERHUB_USERNAME with your actual DockerHub handle,
+          # or use the value injected by the CI pipeline.
+          image: durai85/product-service:latest
+
+          # imagePullPolicy: Always ensures the node always fetches the latest
+          # image tag rather than using a locally cached one.
+          imagePullPolicy: Always
+
+          ports:
+            - containerPort: 5001
+
+          # ── Resource Limits ───────────────────────────────────────────────
+          # requests: guaranteed resources reserved for scheduling.
+          # limits:   hard cap; Pod is OOM-killed if it exceeds memory limit.
+          resources:
+            requests:
+              cpu: "100m"       # 0.1 vCPU
+              memory: "128Mi"
+            limits:
+              cpu: "250m"       # 0.25 vCPU
+              memory: "256Mi"
+
+          # ── Liveness Probe ────────────────────────────────────────────────
+          # Kubernetes sends a GET /health request.  If it fails consecutively
+          # (failureThreshold times), the container is restarted automatically.
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 10   # Wait 10 s after start before probing
+            periodSeconds: 15         # Probe every 15 s
+            failureThreshold: 3       # Restart after 3 consecutive failures
+
+          # ── Readiness Probe ───────────────────────────────────────────────
+          # A Pod that fails its readiness probe is removed from the Service's
+          # load balancer until it recovers.  This prevents traffic from
+          # reaching a Pod that is still initialising.
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 5001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            failureThreshold: 3
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# RESOURCE 2: Service (ClusterIP)
+# A ClusterIP Service assigns a stable virtual IP address and DNS name to the
+# set of Pods selected by the label selector.
+#
+# Other Pods inside the cluster can reach this service at:
+#   http://product-service          (port 80, mapped to container port 5001)
+#   http://product-service.default  (fully qualified within the "default" ns)
+# ══════════════════════════════════════════════════════════════════════════════
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: product-service
+  labels:
+    app: product-service
+
+spec:
+  # ClusterIP: the service is only reachable from inside the cluster.
+  # This is appropriate for internal microservice communication.
+  type: ClusterIP
+
+  selector:
+    app: product-service   # Routes traffic to Pods with this label
+
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80             # Port exposed by the Service (internal DNS)
+      targetPort: 5001     # Port the container actually listens on
