@@ -1,0 +1,37 @@
+{
+  "name": "E-Commerce K8s Demo",
+  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "enableNonRootDocker": "true"
+    },
+    "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
+      "version": "latest",
+      "helm": "none",
+      "minikube": "none"
+    }
+  },
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+  "forwardPorts": [30080, 30001, 30002, 30003],
+  "portsAttributes": {
+    "30080": {
+      "label": "Frontend UI",
+      "onAutoForward": "openBrowser",
+      "protocol": "http"
+    },
+    "30001": {
+      "label": "Product Service",
+      "protocol": "http"
+    },
+    "30002": {
+      "label": "Order Service",
+      "protocol": "http"
+    },
+    "30003": {
+      "label": "User Service",
+      "protocol": "http"
+    }
+  },
+  "remoteUser": "vscode"
+}
