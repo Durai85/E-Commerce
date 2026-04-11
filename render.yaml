@@ -38,7 +38,7 @@ services:
         fromService:
           type: web
           name: product-service
-          property: host
+          property: url
 
   # ── User Service ────────────────────────────────────────────────────────────
   - type: web
