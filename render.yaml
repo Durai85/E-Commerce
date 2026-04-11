@@ -24,8 +24,6 @@ services:
     healthCheckPath: /health
 
   # ── Order Service ───────────────────────────────────────────────────────────
-  # Render automatically injects the Product Service hostname via fromService.
-  # order_service/app.py prepends https:// when no scheme is present.
   - type: web
     name: order-service
     env: python
@@ -35,10 +33,7 @@ services:
     healthCheckPath: /health
     envVars:
       - key: PRODUCT_SERVICE_URL
-        fromService:
-          type: web
-          name: product-service
-          property: url
+        value: https://product-service-dudg.onrender.com
 
   # ── User Service ────────────────────────────────────────────────────────────
   - type: web
